@@ -1,39 +1,141 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { useApplications } from '../../context/ApplicationContext';
+import { api } from '../../services/api';
 import DashboardCard from '../../components/DashboardCard';
 import StatusBadge from '../../components/StatusBadge';
 import { 
-  ClipboardCheck, 
   CheckCircle2, 
   AlertTriangle, 
   Calendar, 
-  Eye, 
   ArrowRight,
-  ShieldAlert,
-  Users
+  Users,
+  Building,
+  Save,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 
 export default function AdminDashboard() {
+  const { token, currentUser } = useAuth();
   const { applications, refreshState } = useApplications();
+
+  const [collegeInfo, setCollegeInfo] = useState(null);
+  const [newCollegeCode, setNewCollegeCode] = useState('');
+  const [savingCode, setSavingCode] = useState(false);
+  const [codeMessage, setCodeMessage] = useState(null);
+  const [codeError, setCodeError] = useState(null);
 
   useEffect(() => {
     refreshState();
-  }, []);
+    if (token) {
+      loadCollegeInfo();
+    }
+  }, [token]);
+
+  const loadCollegeInfo = async () => {
+    try {
+      const data = await api.getAdminCollege(token);
+      setCollegeInfo(data);
+      setNewCollegeCode(data.college_code || '');
+    } catch (err) {
+      console.error("Failed to load admin college info:", err);
+    }
+  };
+
+  const handleUpdateCollegeCode = async (e) => {
+    e.preventDefault();
+    if (!newCollegeCode.trim()) return;
+    setSavingCode(true);
+    setCodeMessage(null);
+    setCodeError(null);
+
+    try {
+      const res = await api.updateCollegeCode(newCollegeCode, token);
+      setCodeMessage(`Student College Code updated to "${res.college_code}"!`);
+      loadCollegeInfo();
+    } catch (err) {
+      setCodeError(err.message || "Failed to update college code");
+    } finally {
+      setSavingCode(false);
+    }
+  };
 
   const total = applications.length;
-  const verified = applications.filter(a => a.overallStatus === 'VERIFIED').length;
-  const needsReview = applications.filter(a => a.overallStatus === 'NEEDS_REVIEW').length;
-  const meetingsRequired = applications.filter(a => a.meetingRequired || a.appointment).length;
+  const verified = applications.filter(a => a.status === 'VERIFIED').length;
+  const needsReview = applications.filter(a => a.status === 'NEEDS_REVIEW').length;
+  const physicalReq = applications.filter(a => a.status === 'PHYSICAL_VERIFICATION_REQUIRED').length;
 
   return (
     <div className="space-y-6">
+      {/* College & Admin Info Header + College Code Management Widget */}
+      <div className="bg-navy text-white rounded-2xl p-6 shadow-md">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-seafoam">
+              {collegeInfo?.college_name || "College Administrator"}
+            </span>
+            <h2 className="text-2xl font-bold mt-0.5">
+              Welcome, {currentUser?.full_name || "Admin Officer"}
+            </h2>
+            <p className="text-xs text-slate-300 mt-1">
+              Department: {currentUser?.department || "Scholarship Cell"} • Designation: {currentUser?.designation || "Verification Officer"}
+            </p>
+          </div>
+
+          {/* Student-Facing College Code Configuration Form */}
+          <div className="bg-slate-800/80 border border-slate-700 p-4 rounded-xl max-w-sm w-full">
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-seafoam mb-2">
+              <Building className="w-4 h-4" />
+              <span>Student-Facing College Code</span>
+            </div>
+
+            {codeMessage && (
+              <div className="mb-2 p-2 bg-emerald-900/60 border border-emerald-500/50 rounded text-xs text-emerald-200 flex items-center gap-1.5">
+                <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{codeMessage}</span>
+              </div>
+            )}
+
+            {codeError && (
+              <div className="mb-2 p-2 bg-rose-900/60 border border-rose-500/50 rounded text-xs text-rose-200 flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{codeError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateCollegeCode} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newCollegeCode}
+                onChange={(e) => setNewCollegeCode(e.target.value.toUpperCase())}
+                placeholder="e.g. COLLEGE001"
+                required
+                className="w-full px-3 py-1.5 bg-slate-900 border border-slate-600 rounded-lg text-xs uppercase font-mono tracking-wider text-white focus:outline-none focus:border-seafoam"
+              />
+              <button
+                type="submit"
+                disabled={savingCode}
+                className="px-3 py-1.5 bg-teal hover:bg-teal-hover text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1 shadow-sm whitespace-nowrap disabled:opacity-50"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{savingCode ? "Saving..." : "Set Code"}</span>
+              </button>
+            </form>
+            <p className="text-[10px] text-slate-400 mt-1.5">
+              Give this code to your students for registration.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Overview Metric Cards */}
       <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
         <DashboardCard
           title="Total Applications"
           value={total}
-          subtitle="Scholarship Submissions"
+          subtitle="College Submissions"
           icon={Users}
           color="navy"
         />
@@ -52,52 +154,20 @@ export default function AdminDashboard() {
           color="amber"
         />
         <DashboardCard
-          title="Meetings Required"
-          value={meetingsRequired}
-          subtitle="Physical In-Person Verification"
+          title="Physical Verification"
+          value={physicalReq}
+          subtitle="In-Person Appointment"
           icon={Calendar}
           color="teal"
         />
       </div>
-
-      {/* Main Demo Action Banner: Flagged Review Priority */}
-      {needsReview > 0 && (
-        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-6 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="p-3 bg-amber-500 text-white rounded-xl">
-                <ShieldAlert className="w-6 h-6" />
-              </div>
-              <div>
-                <span className="px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-amber-200 text-amber-900">
-                  Priority Review Queue
-                </span>
-                <h3 className="text-lg font-bold text-amber-950 mt-1">
-                  Application Flagged for Name Variation (Amit Patil)
-                </h3>
-                <p className="text-xs text-amber-900 mt-0.5">
-                  OCR detection flagged name mismatch across Marksheet & Income Certificate.
-                </p>
-              </div>
-            </div>
-
-            <Link
-              to="/admin/applications/VC-2026-002"
-              className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-colors shadow-md"
-            >
-              <Eye className="w-4 h-4" />
-              <span>Review Application VC-2026-002</span>
-            </Link>
-          </div>
-        </div>
-      )}
 
       {/* Quick Applications Table */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-lg font-bold text-navy">Incoming Applications Overview</h3>
-            <p className="text-xs text-slate-500">Real-time status of candidate applications</p>
+            <p className="text-xs text-slate-500">Real-time status of candidate applications for your college</p>
           </div>
           <Link
             to="/admin/applications"
@@ -108,51 +178,47 @@ export default function AdminDashboard() {
           </Link>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="py-3 px-4">Application ID</th>
-                <th className="py-3 px-4">Student Name</th>
-                <th className="py-3 px-4">Scholarship</th>
-                <th className="py-3 px-4">Docs</th>
-                <th className="py-3 px-4">AI Verification</th>
-                <th className="py-3 px-4">Meeting Status</th>
-                <th className="py-3 px-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-              {applications.map((app) => (
-                <tr key={app.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="py-3 px-4 font-mono font-bold text-navy">{app.id}</td>
-                  <td className="py-3 px-4 font-semibold text-slate-900">{app.studentName}</td>
-                  <td className="py-3 px-4">{app.scholarship}</td>
-                  <td className="py-3 px-4 font-medium">{app.documentsUploadedCount} / 4</td>
-                  <td className="py-3 px-4">
-                    <StatusBadge status={app.overallStatus} confidence={app.aiConfidence} />
-                  </td>
-                  <td className="py-3 px-4">
-                    {app.appointment ? (
-                      <span className="text-teal font-semibold">Scheduled</span>
-                    ) : app.meetingRequired ? (
-                      <span className="text-amber-600 font-semibold">Required</span>
-                    ) : (
-                      <span className="text-slate-400">Not Required</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <Link
-                      to={`/admin/applications/${app.id}`}
-                      className="px-3 py-1 bg-navy text-white text-[11px] font-semibold rounded hover:bg-navy-light transition-colors"
-                    >
-                      View
-                    </Link>
-                  </td>
+        {applications.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 text-xs">
+            No student applications submitted for your college yet. Provide your College Code to students to begin receiving applications.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <th className="py-3 px-4">Application Number</th>
+                  <th className="py-3 px-4">Student Name</th>
+                  <th className="py-3 px-4">Scholarship Program</th>
+                  <th className="py-3 px-4">Uploaded Docs</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                {applications.map((app) => (
+                  <tr key={app.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3 px-4 font-mono font-bold text-navy">{app.application_number}</td>
+                    <td className="py-3 px-4 font-semibold text-slate-900">{app.student_name}</td>
+                    <td className="py-3 px-4">{app.scholarship_name}</td>
+                    <td className="py-3 px-4 font-medium">{app.documents_uploaded_count || (app.documents ? app.documents.length : 0)} / 4</td>
+                    <td className="py-3 px-4">
+                      <StatusBadge status={app.status} />
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <Link
+                        to={`/admin/applications/${app.id}`}
+                        className="px-3 py-1 bg-navy text-white text-[11px] font-semibold rounded hover:bg-navy-light transition-colors"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

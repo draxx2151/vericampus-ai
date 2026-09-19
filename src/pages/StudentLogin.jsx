@@ -2,38 +2,27 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { DEMO_USERS } from '../data/mockData';
-import { GraduationCap, ArrowLeft, Sparkles, Lock, Mail } from 'lucide-react';
+import { GraduationCap, ArrowLeft, Lock, Mail, AlertCircle } from 'lucide-react';
 
 export default function StudentLogin() {
-  const [email, setEmail] = useState('amit.patil@example.edu');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
-      const res = await api.login('STUDENT', email, password);
-      login('STUDENT', res.user);
+      const res = await api.loginStudent(email, password);
+      login('STUDENT', res.user, res.token);
       navigate('/student/dashboard');
     } catch (err) {
       console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleQuickDemoLogin = async (studentUser) => {
-    setLoading(true);
-    try {
-      const res = await api.login('STUDENT', studentUser.email, 'password123');
-      login('STUDENT', res.user);
-      navigate('/student/dashboard');
-    } catch (err) {
-      console.error(err);
+      setError(err.message || 'Invalid email or password');
     } finally {
       setLoading(false);
     }
@@ -61,10 +50,17 @@ export default function StudentLogin() {
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow-md sm:rounded-xl border border-slate-200 sm:px-10">
+          {error && (
+            <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2 text-xs text-rose-800">
+              <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+
           <form className="space-y-4" onSubmit={handleLoginSubmit}>
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Student Email / ID
+                Student Email Address
               </label>
               <div className="relative">
                 <input
@@ -99,47 +95,20 @@ export default function StudentLogin() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 px-4 bg-teal hover:bg-teal-hover text-white font-bold text-sm rounded-lg transition-colors shadow-sm"
+              className="w-full py-2.5 px-4 bg-teal hover:bg-teal-hover text-white font-bold text-sm rounded-lg transition-colors shadow-sm disabled:opacity-50"
             >
               {loading ? "Logging in..." : "Login as Student"}
             </button>
+
+            <div className="text-center pt-2">
+              <p className="text-xs text-slate-500">
+                New student?{' '}
+                <Link to="/student-register" className="font-semibold text-teal hover:underline">
+                  Create an account
+                </Link>
+              </p>
+            </div>
           </form>
-
-          {/* QUICK DEMO LOGIN BUTTONS */}
-          <div className="mt-6 pt-6 border-t border-slate-200">
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-teal" /> Instant Demo Logins:
-            </div>
-            
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin(DEMO_USERS.students[0])} // Amit Patil
-                className="w-full py-2 px-3 text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg transition-colors flex items-center justify-between"
-              >
-                <span>Demo 1: Amit Patil (Needs Review / Mismatch Flow)</span>
-                <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-mono">Main Demo</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin(DEMO_USERS.students[1])} // Rahul Sharma
-                className="w-full py-2 px-3 text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg transition-colors flex items-center justify-between"
-              >
-                <span>Demo 2: Rahul Sharma (Verified Flow)</span>
-                <span className="text-[10px] bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded font-mono">Verified</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemoLogin(DEMO_USERS.students[2])} // Sneha Kulkarni
-                className="w-full py-2 px-3 text-xs font-semibold bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200 rounded-lg transition-colors flex items-center justify-between"
-              >
-                <span>Demo 3: Sneha Kulkarni (Meeting Scheduled)</span>
-                <span className="text-[10px] bg-teal-200 text-teal-900 px-1.5 py-0.5 rounded font-mono">Scheduled</span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

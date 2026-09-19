@@ -9,6 +9,35 @@ build/
 .env
 .env.*
 !.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Document Storage Protection (Uploaded student documents MUST NOT be committed)
+backend/storage/*
+!backend/storage/.gitkeep
+!backend/storage/applications/
+backend/storage/applications/*
+!backend/storage/applications/.gitkeep
+
+# Python backend bytecode, virtualenvs & caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+backend/.pytest_cache/
+backend/__pycache__/
+backend/.venv/
+backend/venv/
+backend/env/
+venv/
+env/
+.venv/
+*.egg-info/
+
+# Local database dumps & files
+*.db
+*.sqlite
+*.sqlite3
 
 # Logs
 *.log

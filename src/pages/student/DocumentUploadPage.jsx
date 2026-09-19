@@ -1,93 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useApplications } from '../../context/ApplicationContext';
 import { api } from '../../services/api';
 import DocumentCard from '../../components/DocumentCard';
-import AIProcessingStepper from '../../components/AIProcessingStepper';
-import { UploadCloud, Sparkles, ShieldCheck, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { UploadCloud, FileCheck, ArrowRight } from 'lucide-react';
 
 export default function DocumentUploadPage() {
-  const { currentUser } = useAuth();
-  const { applications, refreshState } = useApplications();
-  const [app, setApp] = useState(null);
-  const [isProcessingAI, setIsProcessingAI] = useState(false);
-  const [uploadingDoc, setUploadingDoc] = useState(null);
+  const { token } = useAuth();
+  const { myApplication, refreshState } = useApplications();
   const navigate = useNavigate();
 
   useEffect(() => {
     refreshState();
   }, []);
 
-  useEffect(() => {
-    if (applications.length > 0 && currentUser) {
-      const found = applications.find(a => a.studentId === currentUser.id) || applications[0];
-      setApp(found);
-    }
-  }, [applications, currentUser]);
+  const docConfig = [
+    { type: 'GOVERNMENT_ID', title: 'Government ID / Aadhaar' },
+    { type: 'MARKSHEET', title: '10th / 12th Marksheet' },
+    { type: 'INCOME_CERTIFICATE', title: 'Income Certificate' },
+    { type: 'DOMICILE_CERTIFICATE', title: 'Domicile Certificate' }
+  ];
 
-  if (!app) return <div className="p-8 text-center text-slate-500">Loading...</div>;
+  const getUploadedDoc = (typeKey) => {
+    if (!myApplication || !myApplication.documents) return null;
+    return myApplication.documents.find(
+      d => d.document_type === typeKey || d.document_type === typeKey.toLowerCase()
+    );
+  };
 
   const handleUploadSingle = async (documentType, fileObj) => {
-    setUploadingDoc(documentType);
-    try {
-      await api.uploadDocument(app.id, documentType, fileObj);
-      await refreshState();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setUploadingDoc(null);
-    }
+    if (!myApplication) return;
+    await api.uploadDocument(myApplication.id, documentType, fileObj, token);
+    await refreshState();
   };
 
-  const handleUseDemoSingle = async (documentType) => {
-    setUploadingDoc(documentType);
-    try {
-      await api.uploadDocument(app.id, documentType, null);
-      await refreshState();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setUploadingDoc(null);
-    }
-  };
-
-  const handleFillAllDemoDocs = async () => {
-    setUploadingDoc("ALL");
-    try {
-      await api.uploadDocument(app.id, 'Government ID', null);
-      await api.uploadDocument(app.id, '10th/12th Marksheet', null);
-      await api.uploadDocument(app.id, 'Income Certificate', null);
-      await api.uploadDocument(app.id, 'Domicile Certificate', null);
-      await refreshState();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setUploadingDoc(null);
-    }
-  };
-
-  const handleStartAIVerification = () => {
-    setIsProcessingAI(true);
-  };
-
-  const handleAIComplete = async () => {
-    try {
-      await api.runAIVerification(app.id);
-      await refreshState();
-      navigate('/student/verification');
-    } catch (err) {
-      console.error(err);
-      setIsProcessingAI(false);
-    }
-  };
-
-  const docConfig = [
-    { type: 'Government ID', key: 'govId' },
-    { type: '10th/12th Marksheet', key: 'marksheet' },
-    { type: 'Income Certificate', key: 'incomeCert' },
-    { type: 'Domicile Certificate', key: 'domicileCert' }
-  ];
+  const uploadedCount = myApplication ? (myApplication.documents_uploaded_count || (myApplication.documents ? myApplication.documents.length : 0)) : 0;
 
   return (
     <div className="space-y-6">
@@ -99,64 +47,60 @@ export default function DocumentUploadPage() {
             Scholarship Document Upload
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Upload exactly four required documents for initial AI field verification & consistency checking
+            Upload exactly four required documents for eligibility verification (PDF, JPG, PNG — Max 2.5 MB per file)
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold text-slate-700">
+            {uploadedCount} / 4 Documents Uploaded
+          </span>
+          <div className="w-32 bg-slate-100 h-2.5 rounded-full overflow-hidden">
+            <div
+              className="bg-teal h-full transition-all"
+              style={{ width: `${(uploadedCount / 4) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* 4 Required Document Cards */}
+      <div className="grid sm:grid-cols-2 gap-6">
+        {docConfig.map(({ type, title }) => (
+          <DocumentCard
+            key={type}
+            title={title}
+            required={true}
+            applicationId={myApplication?.id}
+            docData={getUploadedDoc(type)}
+            onUpload={(file) => handleUploadSingle(type, file)}
+          />
+        ))}
+      </div>
+
+      {/* Navigation Footer */}
+      <div className="bg-navy text-white rounded-2xl p-6 shadow-md flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h3 className="font-bold text-base text-white flex items-center gap-2">
+            <FileCheck className="w-5 h-5 text-seafoam" />
+            Application Overview
+          </h3>
+          <p className="text-xs text-slate-300 mt-1">
+            {uploadedCount === 4
+              ? "All 4 required documents have been successfully uploaded to your scholarship profile."
+              : `${uploadedCount} of 4 documents uploaded. Please upload all required documents.`}
           </p>
         </div>
 
         <button
-          onClick={handleFillAllDemoDocs}
-          disabled={uploadingDoc !== null}
-          className="flex items-center gap-2 px-4 py-2 bg-seafoam-light hover:bg-seafoam text-navy text-xs font-bold rounded-xl border border-seafoam transition-all shadow-sm"
-          title="Fills all 4 required documents instantly for presentation demonstration"
+          onClick={() => navigate('/student/dashboard')}
+          className="flex items-center gap-2 px-6 py-3 bg-teal hover:bg-teal-hover text-white font-bold text-xs rounded-xl transition-all shadow-md"
         >
-          <Sparkles className="w-4 h-4 text-teal" />
-          <span>Fill All 4 Demo Documents</span>
+          <span>Return to Student Dashboard</span>
+          <ArrowRight className="w-4 h-4" />
         </button>
       </div>
-
-      {/* AI Processing Stepper Screen */}
-      {isProcessingAI ? (
-        <AIProcessingStepper onComplete={handleAIComplete} />
-      ) : (
-        <>
-          {/* 4 Required Document Cards */}
-          <div className="grid sm:grid-cols-2 gap-6">
-            {docConfig.map(({ type, key }) => (
-              <DocumentCard
-                key={key}
-                title={type}
-                required={true}
-                docData={app.documents[key]}
-                onUpload={(file) => handleUploadSingle(type, file)}
-                onUseDemo={() => handleUseDemoSingle(type)}
-              />
-            ))}
-          </div>
-
-          {/* Verification Trigger Banner */}
-          <div className="bg-navy text-white rounded-2xl p-6 shadow-md flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h3 className="font-bold text-base text-white flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-seafoam" />
-                Ready for AI Verification Simulation
-              </h3>
-              <p className="text-xs text-slate-300 mt-1">
-                {app.documentsUploadedCount === 4
-                  ? "All 4 required documents present. Click below to start initial AI field extraction & cross-document check."
-                  : `${app.documentsUploadedCount} of 4 documents uploaded. Click 'Fill All 4 Demo Documents' above to prepare instantly.`}
-              </p>
-            </div>
-
-            <button
-              onClick={handleStartAIVerification}
-              className="flex items-center gap-2 px-6 py-3 bg-teal hover:bg-teal-hover text-white font-bold text-sm rounded-xl transition-all shadow-md"
-            >
-              <span>Start AI Verification</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </>
-      )}
     </div>
   );
 }
+

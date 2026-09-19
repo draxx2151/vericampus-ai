@@ -2,38 +2,28 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { DEMO_USERS } from '../data/mockData';
-import { Building2, ArrowLeft, Sparkles, Lock, Mail, ShieldCheck } from 'lucide-react';
+import { Building2, ArrowLeft, Lock, Mail, Building, AlertCircle, KeyRound } from 'lucide-react';
 
 export default function AdminLogin() {
-  const [email, setEmail] = useState('admin@vericampus.edu');
-  const [password, setPassword] = useState('admin123');
+  const [collegeCode, setCollegeCode] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
-      const res = await api.login('ADMIN', email, password);
-      login('ADMIN', res.user);
+      const res = await api.loginAdmin(collegeCode, email, password);
+      login('ADMIN', res.user, res.token);
       navigate('/admin/dashboard');
     } catch (err) {
       console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleQuickDemoLogin = async () => {
-    setLoading(true);
-    try {
-      const res = await api.login('ADMIN', DEMO_USERS.admin.email, 'admin123');
-      login('ADMIN', res.user);
-      navigate('/admin/dashboard');
-    } catch (err) {
-      console.error(err);
+      setError(err.message || 'Invalid college code, email, or password');
     } finally {
       setLoading(false);
     }
@@ -61,10 +51,34 @@ export default function AdminLogin() {
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow-md sm:rounded-xl border border-slate-200 sm:px-10">
+          {error && (
+            <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2 text-xs text-rose-800">
+              <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+
           <form className="space-y-4" onSubmit={handleLoginSubmit}>
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Admin Officer Email / ID
+                College Code
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={collegeCode}
+                  onChange={(e) => setCollegeCode(e.target.value)}
+                  required
+                  className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg text-sm uppercase font-mono tracking-wider focus:ring-2 focus:ring-navy focus:border-navy outline-none"
+                  placeholder="e.g. COLLEGE001"
+                />
+                <Building className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                Admin Officer Email Address
               </label>
               <div className="relative">
                 <input
@@ -73,7 +87,7 @@ export default function AdminLogin() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-navy focus:border-navy outline-none"
-                  placeholder="admin@vericampus.edu"
+                  placeholder="admin@college.edu"
                 />
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               </div>
@@ -99,22 +113,22 @@ export default function AdminLogin() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 px-4 bg-navy hover:bg-navy-light text-white font-bold text-sm rounded-lg transition-colors shadow-sm"
+              className="w-full py-2.5 px-4 bg-navy hover:bg-navy-light text-white font-bold text-sm rounded-lg transition-colors shadow-sm disabled:opacity-50"
             >
               {loading ? "Authenticating..." : "Login as Administrator"}
             </button>
           </form>
 
-          {/* QUICK DEMO LOGIN BUTTON */}
-          <div className="mt-6 pt-6 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={handleQuickDemoLogin}
-              className="w-full py-2.5 px-3 text-xs font-semibold bg-navy-light text-white hover:bg-slate-700 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
+          {/* ADMIN SETUP LINK */}
+          <div className="mt-6 pt-6 border-t border-slate-200 text-center">
+            <p className="text-xs text-slate-500 mb-2">First time college admin setup?</p>
+            <Link
+              to="/admin-register"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-navy hover:underline"
             >
-              <ShieldCheck className="w-4 h-4 text-seafoam" />
-              <span>Demo Login as Admin (Dr. V. K. Deshmukh)</span>
-            </button>
+              <KeyRound className="w-3.5 h-3.5 text-navy" />
+              <span>Register Admin with Private Setup Code</span>
+            </Link>
           </div>
         </div>
       </div>

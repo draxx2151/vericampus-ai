@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { DEMO_USERS } from '../data/mockData';
+import { api } from '../services/api';
 
 const AuthContext = createContext();
 
@@ -9,19 +9,48 @@ export const AuthProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const login = (role, userObject) => {
-    const user = userObject || (role === 'ADMIN' ? DEMO_USERS.admin : DEMO_USERS.students[0]);
-    setCurrentUser(user);
-    localStorage.setItem('vericampus_user', JSON.stringify(user));
+  const [token, setToken] = useState(() => {
+    return localStorage.getItem('vericampus_token') || null;
+  });
+
+  const [loading, setLoading] = useState(false);
+
+  // Validate token and refresh profile from backend /auth/me on mount
+  useEffect(() => {
+    const initAuth = async () => {
+      const savedToken = localStorage.getItem('vericampus_token');
+      if (savedToken) {
+        try {
+          const profile = await api.getMe(savedToken);
+          setCurrentUser(profile);
+          localStorage.setItem('vericampus_user', JSON.stringify(profile));
+        } catch (err) {
+          console.error("Token verification failed:", err);
+          logout();
+        }
+      }
+    };
+    initAuth();
+  }, []);
+
+  const login = (role, userObject, accessToken = null) => {
+    setCurrentUser(userObject);
+    localStorage.setItem('vericampus_user', JSON.stringify(userObject));
+    if (accessToken) {
+      setToken(accessToken);
+      localStorage.setItem('vericampus_token', accessToken);
+    }
   };
 
   const logout = () => {
     setCurrentUser(null);
+    setToken(null);
     localStorage.removeItem('vericampus_user');
+    localStorage.removeItem('vericampus_token');
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, login, logout, role: currentUser?.role }}>
+    <AuthContext.Provider value={{ currentUser, token, login, logout, role: currentUser?.role }}>
       {children}
     </AuthContext.Provider>
   );

@@ -4,13 +4,16 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 // Public pages
 import LandingPage from './pages/LandingPage';
 import StudentLogin from './pages/StudentLogin';
+import StudentRegister from './pages/StudentRegister';
 import AdminLogin from './pages/AdminLogin';
+import AdminRegister from './pages/AdminRegister';
 
 // Layout
 import DashboardLayout from './components/DashboardLayout';
 
 // Student Pages
 import StudentDashboard from './pages/student/StudentDashboard';
+import SelectScholarshipPage from './pages/student/SelectScholarshipPage';
 import DocumentUploadPage from './pages/student/DocumentUploadPage';
 import VerificationResultPage from './pages/student/VerificationResultPage';
 import StudentAppointmentPage from './pages/student/StudentAppointmentPage';
@@ -29,11 +32,14 @@ export default function App() {
       {/* 1. Landing / Entry Page (Role Selection ONLY) */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/student-login" element={<StudentLogin />} />
+      <Route path="/student-register" element={<StudentRegister />} />
       <Route path="/admin-login" element={<AdminLogin />} />
+      <Route path="/admin-register" element={<AdminRegister />} />
 
       {/* 2. Protected Student Dashboard Routes */}
       <Route element={<DashboardLayout requiredRole="STUDENT" />}>
         <Route path="/student/dashboard" element={<StudentDashboard />} />
+        <Route path="/student/select-scholarship" element={<SelectScholarshipPage />} />
         <Route path="/student/documents" element={<DocumentUploadPage />} />
         <Route path="/student/verification" element={<VerificationResultPage />} />
         <Route path="/student/appointment" element={<StudentAppointmentPage />} />
