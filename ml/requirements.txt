@@ -1,0 +1,10 @@
+# VeriCampus AI — ML Dependencies
+# Install: pip install -r ml/requirements.txt
+
+Pillow>=10.0.0
+Faker>=20.0.0
+numpy>=1.26.0
+opencv-python>=4.8.0
+pandas>=2.1.0
+scikit-learn>=1.3.0
+joblib>=1.3.0

@@ -324,7 +324,8 @@ export const api = {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`
-      }
+      },
+      cache: 'no-store'
     });
 
     if (!res.ok) {
@@ -336,127 +337,250 @@ export const api = {
     return await res.blob();
   },
 
-  // Simulated AI Verification Engine
-  async runAIVerification(applicationId) {
-    await delay(1500); // Realistic AI processing simulation time
-    const apps = getStoredApplications();
-    const appIndex = apps.findIndex(a => a.id === applicationId);
-    if (appIndex === -1) throw new Error("Application not found");
-
-    const app = apps[appIndex];
-    
-    // Perform automated cross-document AI verification
-    app.overallStatus = "VERIFIED";
-    app.aiConfidence = 95;
-    app.crossDocumentChecks = [
-      { check: "Name Consistency Across Documents", status: "PASSED", details: `All documents match '${app.studentName}'` },
-      { check: "Date of Birth Verification", status: "PASSED", details: "DOB verified against government records" },
-      { check: "Income Eligibility Check", status: "PASSED", details: "Income criteria verified" },
-      { check: "Domicile State Alignment", status: "PASSED", details: "State domicile criteria satisfied" }
-    ];
-
-    // Set document statuses
-    Object.keys(app.documents).forEach(k => {
-      if (app.documents[k]) {
-        app.documents[k].status = (app.overallStatus === 'NEEDS_REVIEW' && (k === 'marksheet' || k === 'incomeCert')) ? 'FLAGGED' : 'VERIFIED';
+  // Real Backend Verification Pipeline APIs
+  async triggerVerification(applicationId, accessToken) {
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/verify`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
       }
     });
 
-    saveStoredApplications(apps);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Automated document verification failed.');
+      throw new Error(msg);
+    }
+    return data;
+  },
 
-    // Create Notification
-    const notifs = getStoredNotifications();
-    notifs.unshift({
-      id: `notif-${Date.now()}`,
-      recipientRole: "STUDENT",
-      studentId: app.studentId,
-      title: "AI Verification Complete",
-      message: `AI verification completed for ${app.id}. Status: ${app.overallStatus === 'NEEDS_REVIEW' ? 'Needs Review' : 'Verified'}.`,
-      timestamp: new Date().toLocaleString(),
-      read: false,
-      applicationId: app.id
+  async getVerificationResult(applicationId, accessToken) {
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/verification-result`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
     });
 
-    if (app.overallStatus === 'NEEDS_REVIEW') {
-      notifs.unshift({
-        id: `notif-adm-${Date.now()}`,
-        recipientRole: "ADMIN",
-        title: "Application Flagged for Review",
-        message: `Application ${app.id} (${app.studentName}) requires admin attention due to name inconsistency.`,
-        timestamp: new Date().toLocaleString(),
-        read: false,
-        applicationId: app.id
-      });
+    if (res.status === 404) return null;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to fetch verification result.');
+      throw new Error(msg);
     }
-
-    saveStoredNotifications(notifs);
-    return app;
+    return data;
   },
 
-  // Admin Review Decision
-  async updateApplicationStatus(applicationId, newStatus, notes = "") {
-    await delay(300);
-    const apps = getStoredApplications();
-    const appIndex = apps.findIndex(a => a.id === applicationId);
-    if (appIndex === -1) throw new Error("Application not found");
-
-    const app = apps[appIndex];
-    app.overallStatus = newStatus;
-    app.adminDecision = {
-      status: newStatus,
-      reviewedBy: "Admin Officer (Dr. V. K. Deshmukh)",
-      reviewDate: new Date().toLocaleString(),
-      notes: notes || `Admin manually updated status to ${newStatus}.`
-    };
-
-    saveStoredApplications(apps);
-    return app;
-  },
-
-  // Admin Schedule Physical Verification Meeting
-  async scheduleMeeting(applicationId, meetingData) {
-    await delay(400);
-    const apps = getStoredApplications();
-    const appIndex = apps.findIndex(a => a.id === applicationId);
-    if (appIndex === -1) throw new Error("Application not found");
-
-    const app = apps[appIndex];
-    app.meetingRequired = true;
-    app.appointment = {
-      date: meetingData.date,
-      time: meetingData.time,
-      venue: meetingData.venue || "Administrative Block, Room 204, Main Campus",
-      purpose: meetingData.purpose || "Physical Document Verification & Signature Check",
-      scheduledBy: "Admin Officer (Dr. V. K. Deshmukh)",
-      status: "SCHEDULED"
-    };
-
-    saveStoredApplications(apps);
-
-    // Notify Student
-    const notifs = getStoredNotifications();
-    notifs.unshift({
-      id: `notif-meet-${Date.now()}`,
-      recipientRole: "STUDENT",
-      studentId: app.studentId,
-      title: "Physical Document Verification Meeting Scheduled",
-      message: `Admin scheduled your physical document verification meeting for ${meetingData.date} at ${meetingData.time}.`,
-      timestamp: new Date().toLocaleString(),
-      read: false,
-      applicationId: app.id
+  // Real Backend Physical Verification Appointment APIs
+  async getMyPhysicalVerificationAppointment(accessToken) {
+    const res = await fetch(`${API_BASE_URL}/applications/my-application/physical-verification`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
     });
-    saveStoredNotifications(notifs);
 
-    return app;
+    if (res.status === 404) return null;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to retrieve physical verification appointment.');
+      throw new Error(msg);
+    }
+    return data;
   },
 
-  // Notifications API
-  async getNotifications(role, studentId = null) {
-    await delay(200);
-    const notifs = getStoredNotifications();
-    if (role === 'ADMIN') {
-      return notifs.filter(n => n.recipientRole === 'ADMIN');
+  async getPhysicalVerificationAppointment(applicationId, accessToken) {
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/physical-verification`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (res.status === 404) return null;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to retrieve appointment details.');
+      throw new Error(msg);
     }
-    return notifs.filter(n => n.recipientRole === 'STUDENT' && (!studentId || n.studentId === studentId));
+    return data;
+  },
+
+  // Real Backend Admin Review Action APIs
+  async adminApproveApplication(applicationId, remarks, accessToken) {
+    const payload = remarks ? { remarks: remarks.trim(), notes: remarks.trim() } : {};
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/admin-review/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to approve application.');
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async adminRequestCorrection(applicationId, { document_types, reason }, accessToken) {
+    const payload = {
+      document_types,
+      reason: reason.trim()
+    };
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/admin-review/request-correction`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to submit document correction request.');
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async adminSchedulePhysicalVerification(applicationId, { scheduled_date, scheduled_time, venue, purpose, instructions }, accessToken) {
+    const payload = {
+      scheduled_date,
+      scheduled_time,
+      venue: venue.trim(),
+      instructions: instructions?.trim() || purpose?.trim() || 'Bring original certificates along with two photocopies.',
+      purpose: purpose?.trim() || 'Verify original documents'
+    };
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/admin-review/physical-verification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to schedule physical verification appointment.');
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async adminCompletePhysicalVerification(applicationId, { result, remarks }, accessToken) {
+    const payload = {
+      result,
+      remarks: remarks.trim()
+    };
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/admin-review/physical-verification/complete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to record physical verification outcome.');
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async adminRejectApplication(applicationId, { reason, notes }, accessToken) {
+    const payload = {
+      reason: reason.trim(),
+      notes: notes?.trim() || null
+    };
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/admin-review/reject`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to reject application.');
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  // Real Workflow Notifications APIs
+  async getNotifications(accessToken) {
+    const res = await fetch(`${API_BASE_URL}/notifications`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    const data = await res.json().catch(() => ({ notifications: [], unread_count: 0, total_count: 0 }));
+    if (!res.ok) {
+      const msg = data.detail || 'Failed to fetch notifications';
+      throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+    return data;
+  },
+
+  async markNotificationAsRead(notificationId, accessToken) {
+    const res = await fetch(`${API_BASE_URL}/notifications/${notificationId}/read`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.detail || 'Failed to mark notification as read';
+      throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+    return data;
+  },
+
+  async markAllNotificationsAsRead(accessToken) {
+    const res = await fetch(`${API_BASE_URL}/notifications/mark-all-read`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.detail || 'Failed to mark all notifications as read';
+      throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+    return data;
   }
 };

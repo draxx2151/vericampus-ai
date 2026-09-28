@@ -9,7 +9,55 @@ export const ApplicationProvider = ({ children }) => {
   const [applications, setApplications] = useState([]);
   const [myApplication, setMyApplication] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  const fetchNotifications = async () => {
+    const savedToken = token || localStorage.getItem('vericampus_token');
+    if (!savedToken) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return [];
+    }
+
+    try {
+      const data = await api.getNotifications(savedToken);
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unread_count || 0);
+      return data.notifications || [];
+    } catch (err) {
+      console.error("Failed to load notifications", err);
+      return [];
+    }
+  };
+
+  const markNotificationAsRead = async (notificationId) => {
+    const savedToken = token || localStorage.getItem('vericampus_token');
+    if (!savedToken) return;
+    try {
+      await api.markNotificationAsRead(notificationId, savedToken);
+      setNotifications(prev =>
+        prev.map(n => n.id === notificationId ? { ...n, is_read: true, read_at: new Date().toISOString() } : n)
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error("Failed to mark notification as read", err);
+    }
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    const savedToken = token || localStorage.getItem('vericampus_token');
+    if (!savedToken) return;
+    try {
+      await api.markAllNotificationsAsRead(savedToken);
+      setNotifications(prev =>
+        prev.map(n => ({ ...n, is_read: true, read_at: new Date().toISOString() }))
+      );
+      setUnreadCount(0);
+    } catch (err) {
+      console.error("Failed to mark all notifications as read", err);
+    }
+  };
 
   const fetchApplications = async () => {
     const savedToken = token || localStorage.getItem('vericampus_token');
@@ -39,10 +87,11 @@ export const ApplicationProvider = ({ children }) => {
 
   useEffect(() => {
     fetchApplications();
+    fetchNotifications();
   }, [token, role, currentUser]);
 
   const refreshState = async () => {
-    await fetchApplications();
+    await Promise.all([fetchApplications(), fetchNotifications()]);
   };
 
   return (
@@ -50,8 +99,12 @@ export const ApplicationProvider = ({ children }) => {
       applications,
       myApplication,
       notifications,
+      unreadCount,
       loading,
       fetchApplications,
+      fetchNotifications,
+      markNotificationAsRead,
+      markAllNotificationsAsRead,
       refreshState,
       setApplications
     }}>

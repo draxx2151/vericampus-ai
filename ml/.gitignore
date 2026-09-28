@@ -1,0 +1,18 @@
+# Generated datasets & outputs — do NOT commit
+datasets/
+output/
+models/
+artifacts/
+*.joblib
+*.pkl
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+
+# IDE
+.vscode/
+.idea/

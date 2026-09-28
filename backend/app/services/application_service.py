@@ -2,6 +2,7 @@ import uuid
 import random
 from typing import Optional, List
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import func
 from fastapi import HTTPException, status
 
@@ -9,9 +10,11 @@ from app.db.models.scholarship_application import ScholarshipApplication
 from app.db.models.document import Document
 from app.db.models.student import Student
 from app.db.models.admin_officer import AdminOfficer
+from app.db.models.verification_result import VerificationResult
 from app.db.models.enums import ApplicationStatus, DocumentType, UploadStatus, UserRole
 from app.schemas.application import MAHADBT_SCHEMES
 from app.services.document_storage_service import DocumentStorageService
+from app.services.notification_service import NotificationService
 
 class ApplicationService:
     @staticmethod
@@ -29,6 +32,14 @@ class ApplicationService:
                 "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None
             })
 
+        correction_request = None
+        for vr in app.verification_results:
+            if vr.document_id is None and vr.extracted_data and isinstance(vr.extracted_data, dict):
+                cr = vr.extracted_data.get("correction_request")
+                if cr:
+                    correction_request = cr
+                    break
+
         return {
             "id": str(app.id),
             "student_id": str(app.student_id),
@@ -41,6 +52,7 @@ class ApplicationService:
             "submitted_at": app.submitted_at.isoformat() if app.submitted_at else None,
             "created_at": app.created_at.isoformat() if app.created_at else None,
             "updated_at": app.updated_at.isoformat() if app.updated_at else None,
+            "correction_request": correction_request,
             "documents": doc_list
         }
 
@@ -96,6 +108,32 @@ class ApplicationService:
         )
 
         db.add(new_app)
+        db.flush()
+
+        # Generate notifications for Student and Admin
+        NotificationService.create_notification(
+            db=db,
+            college_id=student.college_id,
+            recipient_role=UserRole.STUDENT,
+            event_type="APPLICATION_SUBMITTED",
+            title="Scholarship Application Initiated",
+            message=f"Your scholarship application {app_number} for {clean_scheme} has been initiated. Please upload all 4 required documents.",
+            student_id=student.id,
+            application_id=new_app.id,
+            metadata={"application_number": app_number, "scheme": clean_scheme}
+        )
+        NotificationService.create_notification(
+            db=db,
+            college_id=student.college_id,
+            recipient_role=UserRole.ADMIN,
+            event_type="APPLICATION_SUBMITTED",
+            title="New Application Submitted",
+            message=f"Student {student.full_name} submitted new application {app_number} for {clean_scheme}.",
+            student_id=student.id,
+            application_id=new_app.id,
+            metadata={"application_number": app_number, "student_name": student.full_name, "scheme": clean_scheme}
+        )
+
         db.commit()
         db.refresh(new_app)
 
@@ -261,6 +299,32 @@ class ApplicationService:
             existing_doc.file_size = file_size
             existing_doc.upload_status = UploadStatus.UPLOADED
             existing_doc.uploaded_at = func.now()
+
+            # Trigger real event notifications for document replacement
+            college_id = app.student.college_id if app.student else None
+            if college_id:
+                NotificationService.create_notification(
+                    db=db,
+                    college_id=college_id,
+                    recipient_role=UserRole.STUDENT,
+                    event_type="DOCUMENT_REPLACED",
+                    title="Replacement Document Received",
+                    message=f"Replacement file for {target_enum.value} was successfully received for application {app.application_number}.",
+                    student_id=student_uuid,
+                    application_id=app.id,
+                    metadata={"document_type": target_enum.value, "filename": original_filename, "application_number": app.application_number}
+                )
+                NotificationService.create_notification(
+                    db=db,
+                    college_id=college_id,
+                    recipient_role=UserRole.ADMIN,
+                    event_type="DOCUMENT_REPLACED",
+                    title="Student Replaced Document",
+                    message=f"Student {app.student.full_name if app.student else 'Applicant'} uploaded replacement for {target_enum.value} on application {app.application_number}.",
+                    student_id=student_uuid,
+                    application_id=app.id,
+                    metadata={"document_type": target_enum.value, "filename": original_filename, "student_name": app.student.full_name if app.student else "Applicant", "application_number": app.application_number}
+                )
         else:
             new_doc = Document(
                 id=uuid.uuid4(),
@@ -273,6 +337,32 @@ class ApplicationService:
                 upload_status=UploadStatus.UPLOADED
             )
             db.add(new_doc)
+
+        # Track replacement of documents under active correction request
+        ver_results = (
+            db.query(VerificationResult)
+            .filter(
+                VerificationResult.application_id == app.id,
+                VerificationResult.document_id.is_(None),
+            )
+            .all()
+        )
+        for vr in ver_results:
+            if vr.extracted_data and isinstance(vr.extracted_data, dict):
+                extracted = dict(vr.extracted_data)
+                cr = dict(extracted.get("correction_request") or {})
+                if cr and cr.get("status") == "PENDING":
+                    resolved = list(cr.get("resolved_documents") or [])
+                    target_val = target_enum.value if hasattr(target_enum, "value") else str(target_enum)
+                    if target_val not in resolved:
+                        resolved.append(target_val)
+                        cr["resolved_documents"] = resolved
+                        req_docs = cr.get("document_types") or cr.get("requested_documents") or []
+                        if all(req_type in resolved for req_type in req_docs):
+                            cr["status"] = "RESOLVED"
+                        extracted["correction_request"] = cr
+                        vr.extracted_data = extracted
+                        flag_modified(vr, "extracted_data")
 
         # 6. STEP C: Execute Database Transaction with Rollback Protection
         try:

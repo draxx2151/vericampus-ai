@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.core.dependencies import get_current_token_payload, require_admin_user
 from app.db.models.enums import UserRole
 from app.services.application_service import ApplicationService
+from app.services.verification import VerificationService
 from app.schemas.application import (
     MAHADBT_SCHEMES,
     ApplicationCreateRequest,
@@ -13,6 +14,14 @@ from app.schemas.application import (
     ApplicationResponse
 )
 from app.schemas.auth import TokenPayload
+from app.services.admin_review_service import AdminReviewService
+from app.schemas.admin_review import (
+    ApproveApplicationRequest,
+    RequestCorrectionRequest,
+    SchedulePhysicalVerificationRequest,
+    CompletePhysicalVerificationRequest,
+    RejectApplicationRequest,
+)
 
 router = APIRouter(prefix="/applications", tags=["Scholarship Applications"])
 
@@ -59,6 +68,28 @@ def get_my_application(
             detail="Only students can access their personal application."
         )
     return ApplicationService.get_student_application(db, current_payload.sub)
+
+
+@router.get(
+    "/my-application/physical-verification",
+    summary="Get Student Physical Verification Appointment",
+    description="Retrieves the scheduled physical verification appointment for the current authenticated student."
+)
+def get_my_physical_verification_appointment(
+    current_payload: TokenPayload = Depends(get_current_token_payload),
+    db: Session = Depends(get_db)
+):
+    if current_payload.role != UserRole.STUDENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only students can access their personal appointment via this endpoint."
+        )
+    return AdminReviewService.get_physical_verification_appointment(
+        db=db,
+        user_id_str=current_payload.sub,
+        role=current_payload.role,
+        user_college_id_str=str(current_payload.college_id) if current_payload.college_id else None
+    )
 
 
 @router.get(
@@ -148,6 +179,193 @@ def download_document(
     return FileResponse(
         path=file_path,
         media_type=mime_type,
-        filename=original_filename
+        filename=original_filename,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, private",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
     )
+
+
+@router.post(
+    "/{application_id}/verify",
+    summary="Trigger Automated Document Verification Pipeline",
+    description="Initiates verification for the 4 required scholarship documents. Evaluates applicant identity, cross-document consistency, and scheme eligibility."
+)
+def verify_application(
+    application_id: str,
+    current_payload: TokenPayload = Depends(get_current_token_payload),
+    db: Session = Depends(get_db)
+):
+    return VerificationService.verify_application(
+        db=db,
+        app_id_str=application_id,
+        user_id_str=current_payload.sub,
+        role=current_payload.role,
+        user_college_id_str=str(current_payload.college_id) if current_payload.college_id else None
+    )
+
+
+@router.get(
+    "/{application_id}/verification-result",
+    summary="Get Application Verification Result",
+    description="Retrieves the persisted verification evaluation result for an application."
+)
+def get_verification_result(
+    application_id: str,
+    current_payload: TokenPayload = Depends(get_current_token_payload),
+    db: Session = Depends(get_db)
+):
+    return VerificationService.get_verification_result(
+        db=db,
+        app_id_str=application_id,
+        user_id_str=current_payload.sub,
+        role=current_payload.role,
+        user_college_id_str=str(current_payload.college_id) if current_payload.college_id else None
+    )
+
+
+@router.get(
+    "/{application_id}/authority-verification",
+    summary="Get Application Authority Verification Result",
+    description="Retrieves the Stage 5 authority verification result for an application. Enforces student ownership and college tenant isolation."
+)
+def get_authority_verification(
+    application_id: str,
+    current_payload: TokenPayload = Depends(get_current_token_payload),
+    db: Session = Depends(get_db)
+):
+    return VerificationService.get_authority_verification_result(
+        db=db,
+        app_id_str=application_id,
+        user_id_str=current_payload.sub,
+        role=current_payload.role,
+        user_college_id_str=str(current_payload.college_id) if current_payload.college_id else None
+    )
+
+
+@router.get(
+    "/{application_id}/physical-verification",
+    summary="Get Application Physical Verification Appointment",
+    description="Retrieves the physical verification appointment for an application. Accessible by authorized student owner or same-college admin."
+)
+def get_application_physical_verification(
+    application_id: str,
+    current_payload: TokenPayload = Depends(get_current_token_payload),
+    db: Session = Depends(get_db)
+):
+    return AdminReviewService.get_physical_verification_appointment(
+        db=db,
+        app_id_str=application_id,
+        user_id_str=current_payload.sub,
+        role=current_payload.role,
+        user_college_id_str=str(current_payload.college_id) if current_payload.college_id else None
+    )
+
+
+@router.post(
+    "/{application_id}/admin-review/approve",
+    summary="Admin Review: Approve Scholarship Application",
+    description="Allows authorized college admin to approve an application. Enforces tenant isolation, 4-document requirement, and human-in-the-loop decision."
+)
+def approve_application(
+    application_id: str,
+    req: Optional[ApproveApplicationRequest] = None,
+    current_payload: TokenPayload = Depends(require_admin_user),
+    db: Session = Depends(get_db)
+):
+    return AdminReviewService.approve_application(
+        db=db,
+        app_id_str=application_id,
+        admin_id_str=current_payload.sub,
+        admin_college_id_str=str(current_payload.college_id),
+        remarks=req.remarks if req else None
+    )
+
+
+@router.post(
+    "/{application_id}/admin-review/request-correction",
+    summary="Admin Review: Request Document Correction",
+    description="Allows authorized college admin to request correction of one or more documents with mandatory reason."
+)
+def request_document_correction(
+    application_id: str,
+    req: RequestCorrectionRequest,
+    current_payload: TokenPayload = Depends(require_admin_user),
+    db: Session = Depends(get_db)
+):
+    return AdminReviewService.request_document_correction(
+        db=db,
+        app_id_str=application_id,
+        admin_id_str=current_payload.sub,
+        admin_college_id_str=str(current_payload.college_id),
+        document_types=req.document_types,
+        reason=req.reason
+    )
+
+
+@router.post(
+    "/{application_id}/admin-review/physical-verification",
+    summary="Admin Review: Schedule Physical Verification Session",
+    description="Allows authorized college admin to schedule a physical document verification appointment for an applicant."
+)
+def schedule_physical_verification(
+    application_id: str,
+    req: SchedulePhysicalVerificationRequest,
+    current_payload: TokenPayload = Depends(require_admin_user),
+    db: Session = Depends(get_db)
+):
+    return AdminReviewService.require_physical_verification(
+        db=db,
+        app_id_str=application_id,
+        admin_id_str=current_payload.sub,
+        admin_college_id_str=str(current_payload.college_id),
+        scheduled_date=req.scheduled_date,
+        scheduled_time=req.scheduled_time,
+        venue=req.venue,
+        instructions=req.instructions
+    )
+
+
+@router.post(
+    "/{application_id}/admin-review/physical-verification/complete",
+    summary="Admin Review: Record Physical Verification Outcome",
+    description="Allows authorized college admin to record physical verification inspection result (VERIFIED or NOT_VERIFIED) and officer remarks."
+)
+def complete_physical_verification(
+    application_id: str,
+    req: CompletePhysicalVerificationRequest,
+    current_payload: TokenPayload = Depends(require_admin_user),
+    db: Session = Depends(get_db)
+):
+    return AdminReviewService.record_physical_verification_result(
+        db=db,
+        app_id_str=application_id,
+        admin_id_str=current_payload.sub,
+        admin_college_id_str=str(current_payload.college_id),
+        result=req.result,
+        remarks=req.remarks
+    )
+
+
+@router.post(
+    "/{application_id}/admin-review/reject",
+    summary="Admin Review: Reject Scholarship Application",
+    description="Allows authorized college admin to reject a scholarship application with mandatory justification."
+)
+def reject_application(
+    application_id: str,
+    req: RejectApplicationRequest,
+    current_payload: TokenPayload = Depends(require_admin_user),
+    db: Session = Depends(get_db)
+):
+    return AdminReviewService.reject_application(
+        db=db,
+        app_id_str=application_id,
+        admin_id_str=current_payload.sub,
+        admin_college_id_str=str(current_payload.college_id),
+        reason=req.reason
+    )
+
 

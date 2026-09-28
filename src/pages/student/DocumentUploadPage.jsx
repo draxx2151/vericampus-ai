@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useApplications } from '../../context/ApplicationContext';
 import { api } from '../../services/api';
 import DocumentCard from '../../components/DocumentCard';
-import { UploadCloud, FileCheck, ArrowRight } from 'lucide-react';
+import { UploadCloud, FileCheck, ArrowRight, AlertCircle } from 'lucide-react';
 
 export default function DocumentUploadPage() {
   const { token } = useAuth();
@@ -36,6 +36,7 @@ export default function DocumentUploadPage() {
   };
 
   const uploadedCount = myApplication ? (myApplication.documents_uploaded_count || (myApplication.documents ? myApplication.documents.length : 0)) : 0;
+  const isCorrectionPending = myApplication?.correction_request?.status === 'PENDING';
 
   return (
     <div className="space-y-6">
@@ -64,18 +65,69 @@ export default function DocumentUploadPage() {
         </div>
       </div>
 
+      {/* Active Correction Request Banner */}
+      {isCorrectionPending && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-6 shadow-sm">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="space-y-2">
+              <h3 className="text-base font-bold text-amber-900">
+                Document Correction Requested by Administrator
+              </h3>
+              <p className="text-xs text-amber-800">
+                <strong>Reason from Reviewing Officer:</strong> {myApplication.correction_request.reason}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                <span className="font-semibold text-amber-900">Requested document updates:</span>
+                {myApplication.correction_request.document_types?.map((dtype) => {
+                  const isResolved = myApplication.correction_request.resolved_documents?.includes(dtype);
+                  const label = docConfig.find(c => c.type === dtype)?.title || dtype;
+                  return (
+                    <span
+                      key={dtype}
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                        isResolved
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : 'bg-amber-200 text-amber-900 border-amber-400'
+                      }`}
+                    >
+                      {label} {isResolved ? '✓ (Replacement Uploaded)' : '• Action Required'}
+                    </span>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-amber-700">
+                Please upload the requested replacement documents using the "Replace File" buttons below.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 4 Required Document Cards */}
       <div className="grid sm:grid-cols-2 gap-6">
-        {docConfig.map(({ type, title }) => (
-          <DocumentCard
-            key={type}
-            title={title}
-            required={true}
-            applicationId={myApplication?.id}
-            docData={getUploadedDoc(type)}
-            onUpload={(file) => handleUploadSingle(type, file)}
-          />
-        ))}
+        {docConfig.map(({ type, title }) => {
+          const isCorrectionRequested =
+            isCorrectionPending &&
+            myApplication?.correction_request?.document_types?.includes(type);
+
+          const isResolved =
+            Boolean(myApplication?.correction_request?.resolved_documents?.includes(type));
+
+          return (
+            <DocumentCard
+              key={type}
+              title={title}
+              required={true}
+              applicationId={myApplication?.id}
+              docData={getUploadedDoc(type)}
+              onUpload={(file) => handleUploadSingle(type, file)}
+              isCorrectionRequested={isCorrectionRequested}
+              isResolved={isResolved}
+              correctionReason={isCorrectionRequested ? myApplication.correction_request.reason : null}
+            />
+          );
+        })}
       </div>
 
       {/* Navigation Footer */}

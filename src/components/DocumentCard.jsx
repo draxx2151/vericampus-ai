@@ -10,7 +10,10 @@ export default function DocumentCard({
   docData,
   applicationId,
   onUpload,
-  onView
+  onView,
+  isCorrectionRequested = false,
+  isResolved = false,
+  correctionReason = null
 }) {
   const { token } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
@@ -94,7 +97,7 @@ export default function DocumentCard({
   const fileSizeFormatted = docData && docData.file_size ? `${(docData.file_size / (1024 * 1024)).toFixed(2)} MB` : null;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:border-slate-300 transition-all flex flex-col justify-between">
+    <div className={`bg-white rounded-xl border ${isCorrectionRequested ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-200'} p-5 shadow-sm hover:border-slate-300 transition-all flex flex-col justify-between`}>
       <div>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -106,12 +109,38 @@ export default function DocumentCard({
               <span className="text-[11px] font-medium text-slate-400">PDF, JPG, PNG (Max 2.5 MB)</span>
             </div>
           </div>
-          {required && (
-            <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase bg-rose-50 text-rose-700 rounded border border-rose-200">
-              Required
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {isCorrectionRequested && (
+              <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase bg-amber-100 text-amber-900 rounded border border-amber-300">
+                Correction Needed
+              </span>
+            )}
+            {required && (
+              <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase bg-rose-50 text-rose-700 rounded border border-rose-200">
+                Required
+              </span>
+            )}
+          </div>
         </div>
+
+        {/* Correction Requested Alert Banner */}
+        {isCorrectionRequested && (
+          <div className="my-2 p-2.5 bg-amber-50 border border-amber-300 text-amber-900 text-xs rounded-lg flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block">Document Correction Requested</span>
+              <span className="text-[11px] text-amber-800">{correctionReason || 'Please upload an updated or corrected file for this document.'}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Correction Resolved Banner */}
+        {isResolved && (
+          <div className="my-2 p-2 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs rounded-lg flex items-center gap-2">
+            <FileCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span className="font-medium text-[11px]">Replacement file uploaded (Correction resolved)</span>
+          </div>
+        )}
 
         {/* Error alert banner */}
         {errorMsg && (

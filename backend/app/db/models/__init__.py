@@ -14,6 +14,7 @@ from app.db.models.scholarship_application import ScholarshipApplication
 from app.db.models.document import Document
 from app.db.models.verification_result import VerificationResult
 from app.db.models.appointment import PhysicalVerificationAppointment
+from app.db.models.notification import Notification
 
 __all__ = [
     "Base",
@@ -30,4 +31,5 @@ __all__ = [
     "Document",
     "VerificationResult",
     "PhysicalVerificationAppointment",
+    "Notification",
 ]

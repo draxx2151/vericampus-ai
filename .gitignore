@@ -14,11 +14,14 @@ backend/.env.*
 !backend/.env.example
 
 # Document Storage Protection (Uploaded student documents MUST NOT be committed)
+storage/
+storage/*
 backend/storage/*
 !backend/storage/.gitkeep
 !backend/storage/applications/
 backend/storage/applications/*
 !backend/storage/applications/.gitkeep
+
 
 # Python backend bytecode, virtualenvs & caches
 __pycache__/
