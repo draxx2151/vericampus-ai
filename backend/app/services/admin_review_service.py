@@ -120,28 +120,134 @@ class AdminReviewService:
 
         return res
 
+    # Valid administrative state transition matrix
+    # Format: current_status -> set of allowed next statuses
+    VALID_STATUS_TRANSITIONS = {
+        ApplicationStatus.SUBMITTED: {
+            ApplicationStatus.NEEDS_REVIEW,
+            ApplicationStatus.PHYSICAL_VERIFICATION_REQUIRED,
+            ApplicationStatus.VERIFIED,
+            ApplicationStatus.REJECTED,
+        },
+        ApplicationStatus.UNDER_AI_VERIFICATION: {
+            ApplicationStatus.NEEDS_REVIEW,
+            ApplicationStatus.PHYSICAL_VERIFICATION_REQUIRED,
+            ApplicationStatus.VERIFIED,
+            ApplicationStatus.REJECTED,
+        },
+        ApplicationStatus.NEEDS_REVIEW: {
+            ApplicationStatus.NEEDS_REVIEW,  # additional correction request
+            ApplicationStatus.PHYSICAL_VERIFICATION_REQUIRED,
+            ApplicationStatus.VERIFIED,
+            ApplicationStatus.REJECTED,
+        },
+        ApplicationStatus.PHYSICAL_VERIFICATION_REQUIRED: {
+            ApplicationStatus.PHYSICAL_VERIFICATION_REQUIRED,  # Re-scheduling / appointment updates
+            ApplicationStatus.PHYSICAL_VERIFICATION_COMPLETED,
+            ApplicationStatus.NEEDS_REVIEW,
+            ApplicationStatus.REJECTED,
+        },
+        ApplicationStatus.PHYSICAL_VERIFICATION_COMPLETED: {
+            ApplicationStatus.VERIFIED,
+            ApplicationStatus.NEEDS_REVIEW,
+            ApplicationStatus.PHYSICAL_VERIFICATION_REQUIRED,
+            ApplicationStatus.REJECTED,
+        },
+        ApplicationStatus.VERIFIED: set(),  # Terminal state: cannot modify without formal appeal workflow
+        ApplicationStatus.REJECTED: set(),  # Terminal state: cannot modify without formal appeal workflow
+    }
+
+    @classmethod
+    def _validate_state_transition(
+        cls,
+        current_status: ApplicationStatus,
+        target_status: ApplicationStatus,
+        action_name: str,
+    ) -> None:
+        """
+        Enforces centralized state transition rules. Blocks invalid lifecycle jumps.
+        """
+        if current_status == ApplicationStatus.REJECTED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot perform '{action_name}' on an already REJECTED application. Student must submit a new application or appeal.",
+            )
+        if current_status == ApplicationStatus.VERIFIED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot perform '{action_name}' on an already APPROVED/VERIFIED application.",
+            )
+
+        allowed = cls.VALID_STATUS_TRANSITIONS.get(current_status, set())
+        if target_status not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid state transition from {current_status.value} to {target_status.value} for action '{action_name}'.",
+            )
+
+    @classmethod
+    def _create_evidence_snapshot(cls, res: VerificationResult) -> Dict[str, Any]:
+        """
+        Creates a lightweight, immutable snapshot of the Stage 6 evidence summary
+        available at the exact time of the administrative decision, without leaking raw PII.
+        """
+        extracted = res.extracted_data or {}
+        ev_summary = extracted.get("evidence_summary")
+        if not ev_summary or not isinstance(ev_summary, dict):
+            return {
+                "snapshot_available": False,
+                "engine_version": "stage6_evidence_engine_v1",
+                "overall_evidence_state": "CLEAR_FOR_REVIEW",
+                "review_reasons": [],
+            }
+
+        return {
+            "snapshot_available": True,
+            "engine_version": ev_summary.get("engine_version", "stage6_evidence_engine_v1"),
+            "overall_evidence_state": ev_summary.get("overall_evidence_state"),
+            "human_review_required": ev_summary.get("human_review_required", False),
+            "review_reasons": list(ev_summary.get("review_reasons") or []),
+            "total_evidence_count": ev_summary.get("total_evidence_count", 0),
+            "strong_support_count": ev_summary.get("strong_support_count", 0),
+            "strong_conflict_count": ev_summary.get("strong_conflict_count", 0),
+            "warnings_count": len(ev_summary.get("warnings") or []),
+            "snapshot_timestamp": datetime.now().isoformat(),
+        }
+
     @classmethod
     def _append_audit_history(
         cls,
         res: VerificationResult,
         action: str,
         admin: AdminOfficer,
+        previous_state: Optional[str] = None,
+        new_state: Optional[str] = None,
         reason: Optional[str] = None,
         details: Optional[Dict[str, Any]] = None,
+        include_evidence_snapshot: bool = True,
     ) -> None:
         extracted = dict(res.extracted_data or {})
         history = list(extracted.get("review_history") or [])
 
-        history.append({
+        event: Dict[str, Any] = {
             "action": action,
             "admin_id": str(admin.id),
             "admin_name": admin.full_name,
             "admin_email": admin.email,
+            "role": "ADMIN",
+            "college_id": str(admin.college_id),
+            "previous_state": previous_state,
+            "new_state": new_state,
             "timestamp": datetime.now().isoformat(),
             "reason": reason,
             "notes": reason,
             "details": details or {},
-        })
+        }
+
+        if include_evidence_snapshot:
+            event["evidence_snapshot"] = cls._create_evidence_snapshot(res)
+
+        history.append(event)
 
         extracted["review_history"] = history
         extracted["last_admin_action"] = {
@@ -179,12 +285,14 @@ class AdminReviewService:
                 detail=f"Cannot approve application. Missing required documents: {missing_str}.",
             )
 
-        # Cannot approve an already REJECTED application directly without resubmission
-        if app.status == ApplicationStatus.REJECTED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot approve a rejected application. Student must submit a new application or appeal.",
-            )
+        # Validate centralized state transition
+        cls._validate_state_transition(
+            current_status=app.status,
+            target_status=ApplicationStatus.VERIFIED,
+            action_name="APPROVE",
+        )
+
+        prev_app_status = app.status.value if hasattr(app.status, "value") else str(app.status)
 
         # Retrieve verification result
         ver_result = cls._get_or_create_app_verification_result(db, app)
@@ -199,12 +307,15 @@ class AdminReviewService:
             extracted["correction_request"]["status"] = "RESOLVED"
             ver_result.extracted_data = extracted
 
-        # Append audit history
+        # Append audit history with immutable snapshot and state transition
         cls._append_audit_history(
             ver_result,
             action="APPROVE",
             admin=admin,
+            previous_state=prev_app_status,
+            new_state=ApplicationStatus.VERIFIED.value,
             reason=remarks or "Approved by college verification officer.",
+            details={"remarks": remarks} if remarks else {},
         )
 
         # Real workflow notifications
@@ -274,11 +385,14 @@ class AdminReviewService:
                 detail="A detailed correction reason (minimum 5 characters) is required.",
             )
 
-        if app.status == ApplicationStatus.REJECTED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot request corrections on a rejected application.",
-            )
+        # Validate centralized state transition
+        cls._validate_state_transition(
+            current_status=app.status,
+            target_status=ApplicationStatus.NEEDS_REVIEW,
+            action_name="REQUEST_CORRECTION",
+        )
+
+        prev_app_status = app.status.value if hasattr(app.status, "value") else str(app.status)
 
         # Verify requested documents exist on application
         existing_doc_types = {d.document_type for d in app.documents}
@@ -325,6 +439,8 @@ class AdminReviewService:
             ver_result,
             action="REQUEST_CORRECTION",
             admin=admin,
+            previous_state=prev_app_status,
+            new_state=ApplicationStatus.NEEDS_REVIEW.value,
             reason=clean_reason,
             details={"document_types": doc_type_values},
         )
@@ -387,11 +503,14 @@ class AdminReviewService:
             db, app_id_str, admin_id_str, admin_college_id_str
         )
 
-        if app.status == ApplicationStatus.REJECTED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot schedule physical verification for a rejected application.",
-            )
+        # Validate centralized state transition
+        cls._validate_state_transition(
+            current_status=app.status,
+            target_status=ApplicationStatus.PHYSICAL_VERIFICATION_REQUIRED,
+            action_name="REQUIRE_PHYSICAL_VERIFICATION",
+        )
+
+        prev_app_status = app.status.value if hasattr(app.status, "value") else str(app.status)
 
         clean_venue = venue.strip() if venue else ""
         if len(clean_venue) < 3:
@@ -442,6 +561,8 @@ class AdminReviewService:
             ver_result,
             action="REQUIRE_PHYSICAL_VERIFICATION",
             admin=admin,
+            previous_state=prev_app_status,
+            new_state=ApplicationStatus.PHYSICAL_VERIFICATION_REQUIRED.value,
             reason=clean_instructions,
             details={
                 "venue": clean_venue,
@@ -518,7 +639,7 @@ class AdminReviewService:
                 detail="Physical verification remarks must be at least 3 characters long.",
             )
 
-        # Find active appointment
+        # Find active scheduled appointment first
         appointment = db.query(PhysicalVerificationAppointment).filter(
             PhysicalVerificationAppointment.application_id == app.id,
             PhysicalVerificationAppointment.status == AppointmentStatus.SCHEDULED,
@@ -529,6 +650,21 @@ class AdminReviewService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No scheduled physical verification appointment found for this application.",
             )
+
+        target_app_status = (
+            ApplicationStatus.PHYSICAL_VERIFICATION_COMPLETED
+            if clean_result == "VERIFIED"
+            else ApplicationStatus.NEEDS_REVIEW
+        )
+
+        # Validate centralized state transition
+        cls._validate_state_transition(
+            current_status=app.status,
+            target_status=target_app_status,
+            action_name="COMPLETE_PHYSICAL_VERIFICATION",
+        )
+
+        prev_app_status = app.status.value if hasattr(app.status, "value") else str(app.status)
 
         # Mark appointment completed
         appointment.status = AppointmentStatus.COMPLETED
@@ -546,10 +682,13 @@ class AdminReviewService:
             # If not verified, do NOT automatically reject; move to NEEDS_REVIEW
             app.status = ApplicationStatus.NEEDS_REVIEW
             ver_result.verification_status = VerificationStatus.NEEDS_REVIEW
+
         cls._append_audit_history(
             ver_result,
             action="COMPLETE_PHYSICAL_VERIFICATION",
             admin=admin,
+            previous_state=prev_app_status,
+            new_state=app.status.value,
             reason=clean_remarks,
             details={
                 "result": clean_result,
@@ -625,11 +764,14 @@ class AdminReviewService:
                 detail="A detailed rejection reason (minimum 5 characters) is required.",
             )
 
-        if app.status == ApplicationStatus.REJECTED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Application is already rejected.",
-            )
+        # Validate centralized state transition
+        cls._validate_state_transition(
+            current_status=app.status,
+            target_status=ApplicationStatus.REJECTED,
+            action_name="REJECT",
+        )
+
+        prev_app_status = app.status.value if hasattr(app.status, "value") else str(app.status)
 
         ver_result = cls._get_or_create_app_verification_result(db, app)
 
@@ -647,7 +789,10 @@ class AdminReviewService:
             ver_result,
             action="REJECT",
             admin=admin,
+            previous_state=prev_app_status,
+            new_state=ApplicationStatus.REJECTED.value,
             reason=clean_reason,
+            details={"rejection_reason": clean_reason},
         )
 
         # Real workflow notifications
@@ -756,10 +901,85 @@ class AdminReviewService:
                 )
             return cls.format_appointment_response(appointment, appointment.application)
 
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Application ID is required to retrieve appointment.",
-        )
+    # -------------------------------------------------------------------------
+    # 7. GET APPLICATION REVIEW HISTORY (Chronological Audit Trail)
+    # -------------------------------------------------------------------------
+    @classmethod
+    def get_review_history(
+        cls,
+        db: Session,
+        app_id_str: str,
+        user_id_str: str,
+        role: UserRole,
+        user_college_id_str: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves the immutable, chronological administrative review audit history.
+        Enforces student ownership and college administrative tenant isolation.
+        PII and secret-safe: returns masked administrative and evidence references.
+        """
+        try:
+            app_uuid = uuid.UUID(str(app_id_str))
+            user_uuid = uuid.UUID(str(user_id_str))
+            college_uuid = uuid.UUID(str(user_college_id_str)) if user_college_id_str else None
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid ID format.",
+            )
+
+        app = db.query(ScholarshipApplication).filter(ScholarshipApplication.id == app_uuid).first()
+        if not app:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Scholarship application not found.",
+            )
+
+        # Authorization: Student owner OR same-college administrator
+        if role == UserRole.STUDENT:
+            if app.student_id != user_uuid:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: You do not own this application.",
+                )
+        elif role == UserRole.ADMIN:
+            if not app.student or app.student.college_id != college_uuid:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: Cross-college review history access is prohibited.",
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Unauthorized role.",
+            )
+
+        res = db.query(VerificationResult).filter(
+            VerificationResult.application_id == app.id,
+            VerificationResult.document_id.is_(None),
+        ).first()
+
+        if not res or not res.extracted_data or not isinstance(res.extracted_data, dict):
+            return []
+
+        history = res.extracted_data.get("review_history", [])
+        if not isinstance(history, list):
+            return []
+
+        # Return sanitized audit trail
+        sanitized_history = []
+        for item in history:
+            if isinstance(item, dict):
+                clean_item = dict(item)
+                # Ensure no storage_path or raw internal paths are leaked
+                if "details" in clean_item and isinstance(clean_item["details"], dict):
+                    clean_details = dict(clean_item["details"])
+                    clean_details.pop("storage_path", None)
+                    clean_details.pop("file_path", None)
+                    clean_item["details"] = clean_details
+                sanitized_history.append(clean_item)
+
+        return sanitized_history
 
     # -------------------------------------------------------------------------
     # Helpers: Formatting Responses

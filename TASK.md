@@ -172,19 +172,53 @@
 - [x] Updated Frontend Student `VerificationResultPage.jsx` with supportive external authority confirmation card.
 - [x] Added 38 automated tests in `backend/tests/test_authority_verification.py` (all 38 passing cleanly).
 
+### 1.14 ML Phase 1: Stage 6 Evidence & Decision Support Engine
+- [x] Implemented full package `ml/evidence_engine/` (`config.py`, `schemas.py`, `base.py`, `evidence_mapper.py`, `scorer.py`, `service.py`, `evaluate.py`, `__init__.py`).
+- [x] Defined Pydantic models: `EvidenceCategory` (`SUPPORTING`, `CONFLICTING`, `NEUTRAL`, `WARNING`, `TECHNICAL_ERROR`), `EvidenceStrength` (`STRONG`, `MODERATE`, `WEAK`, `NONE`), `EvidenceState` (`CLEAR_FOR_REVIEW`, `HUMAN_REVIEW_REQUIRED`, `INSUFFICIENT_EVIDENCE`, `PROCESSING_ERROR`), and `ReviewReason` (16 standardized codes).
+- [x] Enforced strict assistive philosophy: Stage 6 never autonomously approves or denies applications; all final decisions remain strictly with authorized university officers (Stage 7).
+- [x] Enforced zero fraud scores: strictly zero fraud percentages or speculative fraud probability figures anywhere in schemas or narrative summaries.
+- [x] Implemented automatic PII masking in `EvidenceItem`: regex sanitization masks 12-digit Aadhaar (`********9012`), 10-char PAN (`******1234F`), and local filesystem storage paths (`[SECURE_STORAGE_PATH]`).
+- [x] Implemented multi-stage mappers across Stages 1 through 5 and RulesEngine statutory eligibility criteria with non-punitive semantics (`MATCH` -> Supporting, `MISMATCH` -> Conflicting, `NOT_AVAILABLE`/`BLOCKED`/`ERROR` -> Neutral).
+- [x] Implemented evidence deduplication (`consolidate_overlapping_evidence`) merging cross-document and authority findings on the same fields into unified items with highest evidence weight.
+- [x] Implemented evidence synthesis (`synthesize_evidence_summary`) computing supporting/conflicting counts by strength, review reasons, review state, and human-readable plain-English narrative explanation.
+- [x] Verified zero network socket safety: 100% offline-safe execution with zero socket calls.
+- [x] Integrated into `VerificationService.verify_application`: executes Stage 6 and persists `evidence_summary` in `VerificationResult.extracted_data`.
+- [x] Implemented safe re-verification merging ensuring prior `evidence_summary` is preserved alongside Stages 1-5 data, review history, and correction requests.
+- [x] Implemented tenant-isolated REST endpoint `GET /api/v1/applications/{application_id}/evidence` with college boundary guard and student ownership enforcement.
+- [x] Added `getEvidenceSummary` and `getAuthorityVerification` to client service layer (`src/services/api.js`).
+- [x] Integrated Frontend Admin View: Added dedicated "EVIDENCE & DECISION SUPPORT" panel to `ApplicationDetailPage.jsx` with overall evidence state badge, narrative summary banner, metric counter cards, review reasons list, and conflicting/supporting breakdown.
+- [x] Integrated Frontend Student View: Added supportive, non-punitive Stage 6 Verification Evidence Summary card to `VerificationResultPage.jsx`.
+- [x] Added 35 automated tests in `backend/tests/test_evidence_engine.py` (all 35 passing cleanly).
+
+### 1.15 ML Phase 1: Stage 7 Human-in-the-Loop Final Review
+- [x] Defined and enforced deterministic status transition matrix (`VALID_STATUS_TRANSITIONS` & `_validate_state_transition`) in `admin_review_service.py` blocking illegal state jumps (e.g., rejecting an already approved application or approving a rejected application).
+- [x] Implemented immutable Stage 6 evidence snapshotting (`_create_evidence_snapshot`) capturing `engine_version`, `overall_evidence_state`, `review_reasons`, and evidence counts at decision time.
+- [x] Enforced mandatory rejection reason (`min_length = 5`) preventing arbitrary or silent administrative rejections.
+- [x] Enforced append-only chronological review history audit trail capturing `action`, `admin_id`, `admin_name`, `role`, `timestamp`, `previous_state`, `new_state`, `reason`, and `evidence_snapshot`.
+- [x] Integrated re-verification safe preservation: re-running verification strictly preserves existing `review_history`, `correction_request`, and appointments.
+- [x] Enforced multi-college tenant isolation and student ownership across all review actions and new review-history endpoint.
+- [x] Implemented dedicated tenant-isolated REST endpoint `GET /api/v1/applications/{application_id}/review-history`.
+- [x] Updated Frontend Admin `ApplicationDetailPage.jsx` with explicit HITL advisory banner, state-transition-aware action controls, and enhanced review history audit timeline rendering previous/new states and evidence snapshots.
+- [x] Updated Frontend Student `VerificationResultPage.jsx` with dedicated administrative decision banner clearly distinguishing AI findings from authorized administrative approval/rejection.
+- [x] Added `getReviewHistory(applicationId, accessToken)` to client API service (`src/services/api.js`).
+- [x] Added 30 comprehensive automated tests in `backend/tests/test_stage7_hitl_review.py` (100% passing).
+- [x] Verified zero commit/push constraint strictly maintained.
+
 ---
 
 ## 2. CURRENT STATUS
 
-- **Codebase Baseline:** ML Phase 1 Stages 1, 2, 3, 4, and 5 fully implemented, tested, and integrated.
-- **Backend Test Suite:** **339 / 339 Automated Tests Passing Cleanly** (`Ran 339 tests in ~116s, OK`).
+- **Codebase Baseline:** ML Phase 1 Stages 1, 2, 3, 4, 5, 6, and 7 fully implemented, tested, and integrated.
+- **Backend Test Suite:** **404 / 404 Automated Tests Passing Cleanly** (`Ran 404 tests in 149.8s, OK`).
+- **Stage 7 HITL Review Tests:** **30 / 30 Passed (100%)** (`test_stage7_hitl_review.py`).
+- **Stage 6 Evidence Engine Tests:** **35 / 35 Passed (100%)** (`test_evidence_engine.py`).
 - **Stage 5 Authority Verification Tests:** **38 / 38 Passed (100%)** (`test_authority_verification.py`).
 - **Stage 4 Tamper & Consistency Tests:** **37 / 37 Passed (100%)** (`test_tamper_consistency.py`).
 - **Stage 3 Field Extraction Tests:** **37 / 37 Passed (100%)** (`test_document_field_extraction.py`).
 - **Stage 2 Document Classification Tests:** **22 / 22 Passed (100%)** (`test_document_classification.py`).
 - **Stage 1 Document Quality Gate Tests:** **20 / 20 Passed (100%)** (`test_document_quality_gate.py`).
 - **Targeted Regression & Lifecycle Tests:** **14/14 End-to-End steps Passed (100%)**.
-- **Frontend Production Build:** `npm run build` completed with **0 errors** (1498 modules transformed in 7.87s).
+- **Frontend Production Build:** `npm run build` completed with **0 errors** (1498 modules transformed in 3.33s).
 - **Database Schema:** PostgreSQL running locally, up-to-date with Alembic revision `b3c4d5e6f7a8` (zero schema changes required).
 - **Active Working Tree:** Main branch, uncommitted and unstaged (strictly NO commits/pushes per user instruction).
 
@@ -238,14 +272,15 @@ The following genuine enhancements and production hardening tasks are planned fo
 
 | Test Scope | Tool / Runner | Tests Executed | Passed | Failed | Duration | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Full Backend Test Discovery** | `python -m unittest discover -s backend/tests` | 339 | 339 | 0 | ~116s | **100% PASSED** |
+| **Full Backend Test Discovery** | `python -m unittest discover -s backend/tests` | 374 | 374 | 0 | 116.5s | **100% PASSED** |
+| **Stage 6 Evidence Engine** | `python -m unittest backend/tests/test_evidence_engine.py` | 35 | 35 | 0 | 0.15s | **100% PASSED** |
 | **Stage 5 Authority Verification** | `python -m unittest backend/tests/test_authority_verification.py` | 38 | 38 | 0 | 0.24s | **100% PASSED** |
 | **Stage 4 Tamper & Consistency** | `python -m unittest backend/tests/test_tamper_consistency.py` | 37 | 37 | 0 | 0.05s | **100% PASSED** |
 | **Stage 3 Field Extraction** | `python -m unittest backend/tests/test_document_field_extraction.py` | 37 | 37 | 0 | 1.8s | **100% PASSED** |
 | **Stage 2 Document Classification** | `python -m unittest backend/tests/test_document_classification.py` | 22 | 22 | 0 | 1.5s | **100% PASSED** |
 | **Stage 1 Document Quality Gate** | `python -m unittest backend/tests/test_document_quality_gate.py` | 20 | 20 | 0 | 9.4s | **100% PASSED** |
 | **Full 14-Step E2E Lifecycle** | `test_e2e_full_lifecycle.py` | 14 steps | 14 | 0 | ~15s | **100% PASSED** |
-| **Frontend Production Build** | `npm run build` (Vite 5) | 1498 modules | 1498 | 0 | 7.87s | **0 ERRORS** |
+| **Frontend Production Build** | `npm run build` (Vite 5) | 1498 modules | 1498 | 0 | 6.69s | **0 ERRORS** |
 
 
 ---

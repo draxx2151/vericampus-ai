@@ -294,6 +294,7 @@ export default function ApplicationDetailPage() {
   const correctionRequest = app.correction_request || verificationResult?.extracted_data?.correction_request;
   const tamperConsistency = verificationResult?.tamper_consistency || verificationResult?.extracted_data?.tamper_consistency;
   const authorityVerification = verificationResult?.authority_verification || verificationResult?.extracted_data?.authority_verification;
+  const evidenceSummary = verificationResult?.evidence_summary || verificationResult?.extracted_data?.evidence_summary;
 
   return (
     <div className="space-y-6 pb-12">
@@ -1094,6 +1095,204 @@ export default function ApplicationDetailPage() {
         </div>
       )}
 
+      {/* 4d. STAGE 6: EVIDENCE & DECISION SUPPORT ENGINE */}
+      {evidenceSummary && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-teal/10 text-teal uppercase tracking-wider">
+                  Stage 6
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  {evidenceSummary.engine_version || 'stage6_evidence_engine_v1'}
+                </span>
+              </div>
+              <h3 className="text-lg font-bold text-navy mt-1 flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-teal" />
+                Evidence & Decision Support Engine
+              </h3>
+              <p className="text-xs text-slate-500">
+                Traceable multi-stage evidence synthesis and explainable review recommendations
+              </p>
+            </div>
+            <div className="text-right flex sm:flex-col items-center sm:items-end justify-between sm:justify-center">
+              <span className="text-xs text-slate-400 block">Overall Evidence State</span>
+              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider inline-block ${
+                evidenceSummary.overall_evidence_state === 'CLEAR_FOR_REVIEW'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                  : evidenceSummary.overall_evidence_state === 'HUMAN_REVIEW_REQUIRED'
+                  ? 'bg-amber-50 text-amber-800 border border-amber-300'
+                  : evidenceSummary.overall_evidence_state === 'INSUFFICIENT_EVIDENCE'
+                  ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                  : 'bg-rose-50 text-rose-800 border border-rose-300'
+              }`}>
+                {evidenceSummary.overall_evidence_state?.replace(/_/g, ' ')}
+              </span>
+            </div>
+          </div>
+
+          {/* Explainable Narrative Banner */}
+          {evidenceSummary.explanation && (
+            <div className={`p-4 rounded-xl border text-xs leading-relaxed flex items-start gap-3 ${
+              evidenceSummary.overall_evidence_state === 'CLEAR_FOR_REVIEW'
+                ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
+                : evidenceSummary.overall_evidence_state === 'HUMAN_REVIEW_REQUIRED'
+                ? 'bg-amber-50/60 border-amber-200 text-amber-950'
+                : 'bg-slate-50 border-slate-200 text-slate-800'
+            }`}>
+              <AlertCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                evidenceSummary.overall_evidence_state === 'CLEAR_FOR_REVIEW'
+                  ? 'text-emerald-600'
+                  : evidenceSummary.overall_evidence_state === 'HUMAN_REVIEW_REQUIRED'
+                  ? 'text-amber-600'
+                  : 'text-slate-600'
+              }`} />
+              <div>
+                <span className="font-bold block mb-1">Synthesized Review Recommendation:</span>
+                <p>{evidenceSummary.explanation}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Evidence Metrics Counters */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="p-3 bg-emerald-50/40 rounded-xl border border-emerald-100 text-center">
+              <span className="text-[11px] font-semibold text-emerald-800 block">Supporting Evidence</span>
+              <span className="text-xl font-black text-emerald-700">
+                {evidenceSummary.supporting_evidence?.length || (evidenceSummary.strong_support_count + evidenceSummary.moderate_support_count + evidenceSummary.weak_support_count) || 0}
+              </span>
+              <span className="text-[10px] text-emerald-600 block mt-0.5">
+                {evidenceSummary.strong_support_count || 0} strong • {evidenceSummary.moderate_support_count || 0} moderate
+              </span>
+            </div>
+
+            <div className="p-3 bg-rose-50/40 rounded-xl border border-rose-100 text-center">
+              <span className="text-[11px] font-semibold text-rose-800 block">Conflicting Evidence</span>
+              <span className="text-xl font-black text-rose-700">
+                {evidenceSummary.conflicting_evidence?.length || (evidenceSummary.strong_conflict_count + evidenceSummary.moderate_conflict_count + evidenceSummary.weak_conflict_count) || 0}
+              </span>
+              <span className="text-[10px] text-rose-600 block mt-0.5">
+                {evidenceSummary.strong_conflict_count || 0} strong • {evidenceSummary.moderate_conflict_count || 0} moderate
+              </span>
+            </div>
+
+            <div className="p-3 bg-amber-50/40 rounded-xl border border-amber-100 text-center">
+              <span className="text-[11px] font-semibold text-amber-800 block">Warnings</span>
+              <span className="text-xl font-black text-amber-700">
+                {evidenceSummary.warnings?.length || 0}
+              </span>
+              <span className="text-[10px] text-amber-600 block mt-0.5">
+                Advisories for officer
+              </span>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
+              <span className="text-[11px] font-semibold text-slate-700 block">Neutral / Technical</span>
+              <span className="text-xl font-black text-slate-700">
+                {(evidenceSummary.neutral_evidence?.length || 0) + (evidenceSummary.technical_issues?.length || 0)}
+              </span>
+              <span className="text-[10px] text-slate-500 block mt-0.5">
+                Unavailable / non-punitive
+              </span>
+            </div>
+          </div>
+
+          {/* Triggered Review Reasons */}
+          {evidenceSummary.review_reasons && evidenceSummary.review_reasons.length > 0 && (
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+              <span className="text-xs font-bold text-navy block mb-2">Triggered Review Attention Reasons:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {evidenceSummary.review_reasons.map((reason, idx) => (
+                  <span key={idx} className="px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-semibold text-slate-800 font-mono">
+                    {reason}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Conflicting Evidence Detail (if any) */}
+          {evidenceSummary.conflicting_evidence && evidenceSummary.conflicting_evidence.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-rose-900 uppercase tracking-wider flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-rose-600" />
+                Conflicting Evidence Requiring Administrative Attention ({evidenceSummary.conflicting_evidence.length})
+              </h4>
+              <div className="space-y-2">
+                {evidenceSummary.conflicting_evidence.map((item, idx) => (
+                  <div key={idx} className="p-3 bg-rose-50/50 rounded-xl border border-rose-200 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 bg-rose-200 text-rose-900 rounded">
+                          {item.source}
+                        </span>
+                        {item.document_type && (
+                          <span className="font-bold text-navy">
+                            {item.document_type.replace(/_/g, ' ')}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold text-rose-700 uppercase">
+                        {item.strength} CONFLICT
+                      </span>
+                    </div>
+                    <p className="text-slate-700 pt-0.5 font-medium">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Supporting Evidence Detail */}
+          {evidenceSummary.supporting_evidence && evidenceSummary.supporting_evidence.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                Supporting Evidence ({evidenceSummary.supporting_evidence.length})
+              </h4>
+              <div className="grid sm:grid-cols-2 gap-2">
+                {evidenceSummary.supporting_evidence.map((item, idx) => (
+                  <div key={idx} className="p-2.5 bg-emerald-50/40 rounded-xl border border-emerald-100 text-xs space-y-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[9px] font-bold px-1 py-0.5 bg-emerald-100 text-emerald-800 rounded">
+                        {item.source}
+                      </span>
+                      <span className="text-[9px] font-semibold text-emerald-700">
+                        {item.strength} SUPPORT
+                      </span>
+                    </div>
+                    <p className="text-slate-800 pt-1 text-[11px]">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Neutral & Unavailable Evidence Items */}
+          {((evidenceSummary.neutral_evidence && evidenceSummary.neutral_evidence.length > 0) ||
+            (evidenceSummary.technical_issues && evidenceSummary.technical_issues.length > 0)) && (
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
+              <span className="text-[11px] font-bold text-slate-700 block">Neutral & Prototype Providers (Non-Punitive):</span>
+              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-slate-600">
+                {(evidenceSummary.neutral_evidence || []).map((nItem, nIdx) => (
+                  <li key={`n-${nIdx}`}>{nItem.description}</li>
+                ))}
+                {(evidenceSummary.technical_issues || []).map((tItem, tIdx) => (
+                  <li key={`t-${tIdx}`}>{tItem.description}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Assistive Disclaimer Footer */}
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+            <span>Assistive Engine — All findings are traceable and require final human administrative confirmation.</span>
+            <span className="font-semibold text-teal">VeriCampus AI Stage 6</span>
+          </div>
+        </div>
+      )}
+
       {/* 5. OCR EXTRACTED DATA EXPANDABLE SECTION */}
       {verificationResult && verificationResult.extracted_data && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1315,7 +1514,11 @@ export default function ApplicationDetailPage() {
                       {entry.action}
                     </span>
                     <span className="font-semibold text-slate-800">{entry.admin_name || 'Admin Officer'}</span>
-                    <span className="text-slate-400 text-[11px]">({entry.admin_email})</span>
+                    {entry.previous_state && entry.new_state && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                        {entry.previous_state} → {entry.new_state}
+                      </span>
+                    )}
                   </div>
                   {entry.reason && (
                     <p className="text-slate-700 text-xs mt-1">
@@ -1326,6 +1529,15 @@ export default function ApplicationDetailPage() {
                     <p className="text-slate-600 text-xs mt-0.5">
                       <strong>Notes:</strong> {entry.notes}
                     </p>
+                  )}
+                  {entry.evidence_snapshot && entry.evidence_snapshot.snapshot_available !== false && (
+                    <div className="mt-1.5 pt-1.5 border-t border-slate-200/60 flex items-center gap-2 text-[10px] text-slate-500">
+                      <span className="font-semibold text-teal">Stage 6 Evidence at Decision:</span>
+                      <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 font-bold text-navy">
+                        {entry.evidence_snapshot.overall_evidence_state || 'CLEAR_FOR_REVIEW'}
+                      </span>
+                      <span>• {entry.evidence_snapshot.total_evidence_count ?? 0} evidence items evaluated</span>
+                    </div>
                   )}
                 </div>
                 <div className="text-right text-slate-400 text-[11px]">
@@ -1411,6 +1623,10 @@ export default function ApplicationDetailPage() {
             </div>
 
             <form onSubmit={handleApproveSubmit} className="p-6 space-y-4">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed">
+                <strong>Administrative Notice:</strong> This action records your decision as an authorized administrator. AI findings are advisory and do not replace administrative judgment.
+              </div>
+
               <p className="text-xs text-slate-700 leading-relaxed">
                 You are about to verify and approve <strong>{app.student_name}</strong>'s application for <strong>{app.scholarship_name}</strong>. This confirms all 4 required documents have been satisfactorily checked.
               </p>

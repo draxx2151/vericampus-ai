@@ -120,6 +120,27 @@ except ImportError:
     UnavailableProvider = None
     STAGE5_VERSION = "stage5_authority_verification_v1"
 
+# Stage 6: Evidence & Decision Support Engine integration
+try:
+    from ml.evidence_engine import (
+        EvidenceEngineService,
+        EvidenceSummary,
+        EvidenceItem,
+        EvidenceCategory,
+        EvidenceStrength as Stage6EvidenceStrength,
+        EvidenceState,
+        STAGE6_VERSION,
+    )
+except ImportError:
+    EvidenceEngineService = None
+    EvidenceSummary = None
+    EvidenceItem = None
+    EvidenceCategory = None
+    Stage6EvidenceStrength = None
+    EvidenceState = None
+    STAGE6_VERSION = "stage6_evidence_engine_v1"
+
+
 
 REQUIRED_VERIFICATION_DOCUMENTS = [
     DocumentType.GOVERNMENT_ID,
@@ -164,12 +185,14 @@ class VerificationService:
         document_classification = None
         authority_verification = None
         tamper_consistency = None
+        evidence_summary = None
         if res.extracted_data and isinstance(res.extracted_data, dict):
             risk_analysis = res.extracted_data.get("risk_analysis")
             document_quality = res.extracted_data.get("document_quality")
             document_classification = res.extracted_data.get("document_classification")
             authority_verification = res.extracted_data.get("authority_verification")
             tamper_consistency = res.extracted_data.get("tamper_consistency")
+            evidence_summary = res.extracted_data.get("evidence_summary")
 
         return {
             "application_id": str(app.id),
@@ -187,10 +210,12 @@ class VerificationService:
             "document_classification": document_classification,
             "authority_verification": authority_verification,
             "tamper_consistency": tamper_consistency,
+            "evidence_summary": evidence_summary,
             "reviewed_at": res.reviewed_at.isoformat() if hasattr(res.reviewed_at, "isoformat") else None,
             "created_at": res.created_at.isoformat() if hasattr(res.created_at, "isoformat") else None,
             "updated_at": res.updated_at.isoformat() if hasattr(res.updated_at, "isoformat") else None,
         }
+
 
     @classmethod
     def verify_application(
@@ -204,7 +229,9 @@ class VerificationService:
         rules_engine: Optional[RulesEngine] = None,
         risk_service: Optional[RiskService] = None,
         authority_service: Optional[Any] = None,
+        evidence_service: Optional[Any] = None,
     ) -> dict:
+
         # 1. Parse and validate UUIDs
         try:
             app_uuid = uuid.UUID(str(app_id_str))
@@ -636,6 +663,52 @@ class VerificationService:
                 "stage_version": STAGE5_VERSION,
             }
 
+        # 5d. STAGE 6: Evidence & Decision Support Engine
+        stage6_result = None
+        active_evidence_service = evidence_service if evidence_service is not None else (
+            EvidenceEngineService() if EvidenceEngineService is not None else None
+        )
+        if active_evidence_service is not None:
+            stage6_result = active_evidence_service.evaluate(
+                application_id=str(app.id),
+                quality_results=quality_evaluations,
+                classification_results=classification_evaluations,
+                extractions=stage3_extractions,
+                tamper_results=stage4_result.model_dump() if stage4_result else None,
+                authority_results=stage5_result.model_dump() if stage5_result else None,
+                rules_evaluation=evaluation,
+                context={
+                    "application_number": app.application_number,
+                    "student_name": app.student.full_name if app.student else None,
+                    "scholarship_name": app.scholarship_name,
+                }
+            )
+            serializable_extractions["evidence_summary"] = stage6_result.model_dump()
+        else:
+            serializable_extractions["evidence_summary"] = {
+                "application_id": str(app.id),
+                "generated_at": datetime.now().isoformat(),
+                "supporting_evidence": [],
+                "conflicting_evidence": [],
+                "neutral_evidence": [],
+                "warnings": [],
+                "technical_issues": [],
+                "total_evidence_count": 0,
+                "strong_support_count": 0,
+                "moderate_support_count": 0,
+                "weak_support_count": 0,
+                "strong_conflict_count": 0,
+                "moderate_conflict_count": 0,
+                "weak_conflict_count": 0,
+                "human_review_required": False,
+                "review_reasons": [],
+                "overall_evidence_state": "CLEAR_FOR_REVIEW",
+                "explanation": "Evidence engine is currently unavailable in this environment.",
+                "pipeline_summary": {},
+                "engine_version": STAGE6_VERSION,
+            }
+
+
         serializable_field_checks = {
             k: v.model_dump() for k, v in evaluation.field_checks.items()
         }
@@ -709,8 +782,8 @@ class VerificationService:
             if existing_result.extracted_data and isinstance(existing_result.extracted_data, dict):
                 prev_extracted = dict(existing_result.extracted_data)
                 # 1. Preserve administrative review history audit trail
-                if "review_history" in prev_extracted and "review_history" not in serializable_extractions:
-                    serializable_extractions["review_history"] = prev_extracted["review_history"]
+                if "review_history" in prev_extracted and isinstance(prev_extracted["review_history"], list):
+                    serializable_extractions["review_history"] = list(prev_extracted["review_history"])
 
                 # 2. Preserve / merge existing correction request
                 if "correction_request" in prev_extracted:
@@ -728,6 +801,11 @@ class VerificationService:
                 # 4. Preserve Stage 4 Tamper & Consistency if present in prior run and not regenerated
                 if "tamper_consistency" in prev_extracted and "tamper_consistency" not in serializable_extractions:
                     serializable_extractions["tamper_consistency"] = prev_extracted["tamper_consistency"]
+
+                # 5. Preserve Stage 6 Evidence Summary if present in prior run and not regenerated
+                if "evidence_summary" in prev_extracted and not serializable_extractions.get("evidence_summary"):
+                    serializable_extractions["evidence_summary"] = prev_extracted["evidence_summary"]
+
 
             existing_result.overall_score = evaluation.overall_score
             existing_result.verification_status = db_verification_status
@@ -964,4 +1042,108 @@ class VerificationService:
             "summary": "Authority verification unavailable.",
             "stage_version": STAGE5_VERSION,
         }
+
+    @classmethod
+    def get_evidence_summary(
+        cls,
+        db: Session,
+        app_id_str: Union[str, uuid.UUID],
+        user_id_str: Optional[Union[str, uuid.UUID]] = None,
+        role: Optional[UserRole] = None,
+        user_college_id_str: Optional[Union[str, uuid.UUID]] = None,
+    ) -> dict:
+        try:
+            app_uuid = uuid.UUID(str(app_id_str))
+            user_uuid = uuid.UUID(str(user_id_str)) if user_id_str else None
+            college_uuid = uuid.UUID(str(user_college_id_str)) if user_college_id_str else None
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid ID format."
+            )
+
+        app = db.query(ScholarshipApplication).filter(
+            ScholarshipApplication.id == app_uuid
+        ).first()
+
+        if not app:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Application not found."
+            )
+
+        # Enforce tenant isolation
+        if role is not None:
+            if role == UserRole.STUDENT and user_uuid:
+                if app.student_id != user_uuid:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied: You do not own this scholarship application."
+                    )
+            elif role == UserRole.ADMIN and college_uuid:
+                if not app.student or app.student.college_id != college_uuid:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access denied: Cross-college application access is prohibited."
+                    )
+
+        result = db.query(VerificationResult).filter(
+            VerificationResult.application_id == app.id,
+            VerificationResult.document_id.is_(None)
+        ).first()
+
+        if not result or not result.extracted_data or "evidence_summary" not in result.extracted_data:
+            return {
+                "application_id": str(app.id),
+                "application_number": app.application_number,
+                "overall_evidence_state": "CLEAR_FOR_REVIEW",
+                "human_review_required": False,
+                "supporting_evidence": [],
+                "conflicting_evidence": [],
+                "neutral_evidence": [],
+                "warnings": [],
+                "technical_issues": [],
+                "total_evidence_count": 0,
+                "strong_support_count": 0,
+                "moderate_support_count": 0,
+                "weak_support_count": 0,
+                "strong_conflict_count": 0,
+                "moderate_conflict_count": 0,
+                "weak_conflict_count": 0,
+                "review_reasons": [],
+                "explanation": "Evidence summary has not been generated or is unavailable.",
+                "pipeline_summary": {},
+                "engine_version": STAGE6_VERSION,
+            }
+
+        ev_data = result.extracted_data["evidence_summary"]
+        if isinstance(ev_data, dict):
+            resp = dict(ev_data)
+            resp["application_id"] = str(app.id)
+            resp["application_number"] = app.application_number
+            return resp
+
+        return {
+            "application_id": str(app.id),
+            "application_number": app.application_number,
+            "overall_evidence_state": "CLEAR_FOR_REVIEW",
+            "human_review_required": False,
+            "supporting_evidence": [],
+            "conflicting_evidence": [],
+            "neutral_evidence": [],
+            "warnings": [],
+            "technical_issues": [],
+            "total_evidence_count": 0,
+            "strong_support_count": 0,
+            "moderate_support_count": 0,
+            "weak_support_count": 0,
+            "strong_conflict_count": 0,
+            "moderate_conflict_count": 0,
+            "weak_conflict_count": 0,
+            "review_reasons": [],
+            "explanation": "Evidence summary unavailable.",
+            "pipeline_summary": {},
+            "engine_version": STAGE6_VERSION,
+        }
+
 

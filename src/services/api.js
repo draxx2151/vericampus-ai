@@ -375,6 +375,44 @@ export const api = {
     return data;
   },
 
+  async getAuthorityVerification(applicationId, accessToken) {
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/authority-verification`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (res.status === 404) return null;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to fetch authority verification result.');
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async getEvidenceSummary(applicationId, accessToken) {
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/evidence`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (res.status === 404) return null;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to fetch evidence summary.');
+      throw new Error(msg);
+    }
+    return data;
+  },
+
   // Real Backend Physical Verification Appointment APIs
   async getMyPhysicalVerificationAppointment(accessToken) {
     const res = await fetch(`${API_BASE_URL}/applications/my-application/physical-verification`, {
@@ -412,6 +450,25 @@ export const api = {
       throw new Error(msg);
     }
     return data;
+  },
+
+  async getReviewHistory(applicationId, accessToken) {
+    const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/review-history`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (res.status === 404) return [];
+    const data = await res.json().catch(() => ([]));
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg || JSON.stringify(d)).join(', ')
+        : (data.detail || 'Failed to retrieve review history.');
+      throw new Error(msg);
+    }
+    return Array.isArray(data) ? data : [];
   },
 
   // Real Backend Admin Review Action APIs

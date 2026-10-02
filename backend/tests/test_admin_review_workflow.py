@@ -1,3 +1,5 @@
+import sys
+from pathlib import Path
 import unittest
 import uuid
 import io
@@ -7,6 +9,12 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
+backend_dir = Path(__file__).resolve().parent.parent
+root_dir = backend_dir.parent
+for d in (str(backend_dir), str(root_dir)):
+    if d not in sys.path:
+        sys.path.insert(0, d)
 
 from app.main import app
 from app.db.base import Base

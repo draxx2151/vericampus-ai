@@ -789,13 +789,90 @@ Connect the React + Vite frontend directly to the FastAPI multi-college authenti
   - Frontend production build: `npm run build` executed with **0 errors** (1498 modules transformed in 7.87s).
   - Working tree remains uncommitted and unstaged as requested.
 
+### Day 12 (2026-10-01) — ML Phase 1: Stage 6 Evidence & Decision Support Engine
+- **Date**: 2026-10-01
+- **Phase**: ML Phase 1 — Evidence & Decision Support Engine (Stage 6 of 7-Stage Verification Architecture)
+- **Objective**: Implement Stage 6 as an explainable Evidence & Decision Support Engine synthesizing verification findings across Stages 1 through 5 and scheme eligibility rules into a structured, traceable evidence package answering the 7 core administrative questions.
+- **Architectural Principles & Safeguards Implemented**:
+  1. **Strictly Assistive Philosophy**: Stage 6 never independently approves, denies, or rejects scholarship applications. All administrative outcomes remain strictly with authorized university officers (Stage 7).
+  2. **Zero Fraud Probability Scores**: Strictly zero speculative fraud percentages, fake probability scores, or opaque ML risk numbers. All findings are explainable and grounded in factual checks.
+  3. **Non-Punitive Evidence Semantics**:
+     - `MATCH` -> Supporting evidence (`STRONG` or `MODERATE` strength).
+     - `MISMATCH` -> Conflicting evidence (`STRONG` or `MODERATE` strength, routes to `HUMAN_REVIEW_REQUIRED`).
+     - `NOT_AVAILABLE`, `BLOCKED`, `ERROR` -> Neutral evidence (`NONE` strength, `requires_human_review = False`). Unavailability of prototype external registries never counts against an applicant.
+  4. **4 Explainable Overall Review States**:
+     - `CLEAR_FOR_REVIEW`: All available checks and verified fields are consistent; clear for administrative sign-off.
+     - `HUMAN_REVIEW_REQUIRED`: Material discrepancies or conflicting checks require officer review.
+     - `INSUFFICIENT_EVIDENCE`: Required documents are missing or illegible, preventing evaluation.
+     - `PROCESSING_ERROR`: Technical error occurred, requiring administrative inspection.
+  5. **Overlapping Evidence Consolidation**: Multi-stage findings reporting on the same field (e.g. cross-doc and authority DOB mismatches) are deduplicated into unified items (`STAGE_4, STAGE_5`) with highest evidence strength, preventing double-counting conflicts.
+  6. **Strict Automatic PII Masking**: Regex validators automatically redact 12-digit Aadhaar identifiers (`********9012`), 10-char PAN cards (`******1234F`), and local server filesystem storage paths (`[SECURE_STORAGE_PATH]`).
+  7. **Re-Verification Safe Merge**: Re-verifying applications preserves prior `evidence_summary` alongside Stages 1-5 metadata, `review_history`, `correction_request`, and `risk_analysis`.
+  8. **100% Offline-Safe Execution**: Verified zero network socket connections during inference.
+- **Components Created & Integrated**:
+  - `ml/evidence_engine/`:
+    - `config.py`: `STAGE6_VERSION = "stage6_evidence_engine_v1"`, `ReviewReason` enum (16 standardized codes), and `EVIDENCE_CONFIG`.
+    - `schemas.py`: Pydantic models for `EvidenceCategory`, `EvidenceStrength`, `EvidenceState`, `EvidenceItem` with automatic PII masking, and `EvidenceSummary`.
+    - `base.py`: `BaseEvidenceEngine` abstract base class.
+    - `evidence_mapper.py`: Complete mappers for Stages 1, 2, 3, 4, 5, and RulesEngine eligibility criteria.
+    - `scorer.py`: `consolidate_overlapping_evidence` and `synthesize_evidence_summary` with weighted counters and plain-English narrative generation.
+    - `service.py`: `EvidenceEngineService` orchestrating end-to-end evidence mapping and synthesis.
+    - `evaluate.py`: Evaluation suite with 6 synthetic benchmark scenarios (100% passing).
+    - `__init__.py`: Clean package exports.
+  - Backend Integration:
+    - `backend/app/services/verification/evidence/__init__.py`: Bridge module.
+    - `backend/app/services/verification/verification_service.py`: Stage 6 execution in `verify_application`, `serializable_extractions["evidence_summary"]`, re-verification safe merge, and tenant-isolated `get_evidence_summary`.
+    - `backend/app/api/v1/applications.py`: Added `GET /api/v1/applications/{application_id}/evidence` endpoint with college tenant isolation.
+  - Frontend Integration:
+    - `src/services/api.js`: Added `getEvidenceSummary(applicationId, accessToken)` and `getAuthorityVerification(applicationId, accessToken)`.
+    - Admin `ApplicationDetailPage.jsx`: Added dedicated "EVIDENCE & DECISION SUPPORT" panel in Ocean Depths theme with overall evidence state badge, plain-language narrative banner, metric counter cards, review reasons list, conflicting evidence breakdown, and supporting evidence list.
+    - Student `VerificationResultPage.jsx`: Added supportive, non-punitive Stage 6 Verification Evidence Summary card.
+  - Automated Test Suite:
+    - `backend/tests/test_evidence_engine.py`: 35 comprehensive unit, integration, and regression tests covering schemas, PII masking, mappers, deduplication, state synthesis, offline safety, tenant isolation, and re-verification safe merge.
+- **Verification Results**:
+  - `test_evidence_engine.py`: **35/35 tests passed cleanly (100%)** (`Ran 35 tests in 0.145s, OK`).
+  - Full backend test suite: **374/374 tests passed cleanly (100%)** (`Ran 374 tests in 116.527s, OK`).
+  - Full 14-step E2E lifecycle test: **100% success rate**.
+  - Frontend production build: `npm run build` executed with **0 errors** (1498 modules transformed in 6.69s).
+  - Working tree remains uncommitted and unstaged as requested.
+
+### Stage 7 Implementation (ML Phase 1 — Human-in-the-Loop Final Review)
+- **Status**: Complete & Verified (Testing & Implementation Only — No Git Commit/Push).
+- **Architecture & Policy Decisions**:
+  1. **Strictly Assistive AI Policy**: AI pipeline and Stage 6 evidence engine outputs are strictly advisory. Final decisions (`APPROVE`, `REJECT`, `REQUEST_CORRECTION`, `PHYSICAL_VERIFICATION`) can only be executed by authenticated human university officers.
+  2. **Deterministic State Transition Matrix**: Enforced centralized validation in `admin_review_service.py` (`VALID_STATUS_TRANSITIONS`), barring invalid state jumps (e.g. `REJECTED -> APPROVE` or `VERIFIED -> CORRECTION`).
+  3. **Immutable Decision Evidence Snapshotting**: Every administrative action automatically records an immutable snapshot of Stage 6 evidence (`engine_version`, `overall_evidence_state`, `review_reasons`, and evidence item counts).
+  4. **Mandatory Administrative Justification**: All rejections require a substantive explanation (`min_length = 5`), rejecting arbitrary or blank reasons.
+  5. **Append-Only Chronological Review History Audit Trail**: All administrative actions are stored in `review_history` with `previous_state`, `new_state`, `admin_id`, `admin_name`, `role="ADMIN"`, `college_id`, `reason`, and `evidence_snapshot`.
+  6. **Re-Verification Safe Preservation**: Re-running the AI verification pipeline strictly preserves prior `review_history`, `correction_request`, and appointments.
+  7. **Multi-College Tenant Isolation & PII Protection**: Review actions and the dedicated review-history endpoint enforce strict college boundaries (HTTP 403 Forbidden). Internal filesystem storage paths and raw PII are strictly redacted.
+- **Components Modified & Integrated**:
+  - Backend Services:
+    - `backend/app/services/admin_review_service.py`: Added `VALID_STATUS_TRANSITIONS`, `_validate_state_transition`, `_create_evidence_snapshot`, `_append_audit_history`, `get_review_history`, and updated approval, rejection, correction request, and physical verification methods.
+    - `backend/app/services/verification/verification_service.py`: Safe preservation of `review_history` on re-verification.
+  - Backend API:
+    - `backend/app/api/v1/applications.py`: Added `GET /api/v1/applications/{application_id}/review-history` endpoint with college tenant isolation.
+  - Frontend:
+    - `src/services/api.js`: Added `getReviewHistory(applicationId, accessToken)`.
+    - `src/pages/admin/ApplicationDetailPage.jsx`: Added explicit HITL advisory banner, state-transition-aware controls, and enhanced review history audit timeline with previous/new state badges and evidence snapshot details.
+    - `src/pages/student/VerificationResultPage.jsx`: Added dedicated administrative decision banner clearly distinguishing AI findings from authorized administrative approval/rejection.
+  - Automated Test Suites:
+    - `backend/tests/test_stage7_hitl_review.py`: 30 automated tests (100% passing).
+- **Verification Results**:
+  - `test_stage7_hitl_review.py`: **30/30 tests passed cleanly (100%)** (`Ran 30 tests in 33.114s, OK`).
+  - Full backend test suite: **404/404 tests passed cleanly (100%)** (`Ran 404 tests in 149.825s, OK`).
+  - Full 14-step E2E lifecycle test: **100% success rate**.
+  - Frontend production build: `npm run build` executed with **0 errors** (1498 modules transformed in 3.33s).
+  - Working tree remains uncommitted and unstaged as requested.
+
 ## Current Status
-- Backend Test Suite: 339/339 tests passing (100% success rate).
+- Backend Test Suite: 404/404 tests passing (100% success rate).
 - Database Schema: Fully migrated to Alembic revision `b3c4d5e6f7a8` (zero schema changes required).
 - Frontend Build: Passing with 0 errors (`npm run build`).
-- Documentation: Complete official suite active (`PRD.md`, `ARCHITECTURE.md`, `DESIGN.md`, `TASK.md`, `PROJECT_PROGRESS.md`, `ml/README.md`, `backend/README.md`).
+- Documentation: Complete official suite active (`PRD.md`, `ARCHITECTURE.md`, `DESIGN.md`, `TASK.md`, `PROJECT_PROGRESS.md`).
 - Working Tree: Uncommitted and unstaged, awaiting user instructions (strictly NO commits/pushes).
 
 ## Next Task
-Await user instructions for ML Phase 1: Stage 6 — Evidence / Verification Decision Engine.
+Await user instructions for reviewing Stage 7 implementation and subsequent Git commit/push approval.
+
 

@@ -246,6 +246,44 @@ def get_authority_verification(
 
 
 @router.get(
+    "/{application_id}/evidence",
+    summary="Get Application Evidence Summary",
+    description="Retrieves the Stage 6 evidence & decision support summary for an application. Enforces student ownership and college tenant isolation."
+)
+def get_application_evidence(
+    application_id: str,
+    current_payload: TokenPayload = Depends(get_current_token_payload),
+    db: Session = Depends(get_db)
+):
+    return VerificationService.get_evidence_summary(
+        db=db,
+        app_id_str=application_id,
+        user_id_str=current_payload.sub,
+        role=current_payload.role,
+        user_college_id_str=str(current_payload.college_id) if current_payload.college_id else None
+    )
+
+
+@router.get(
+    "/{application_id}/review-history",
+    summary="Get Application Review History Audit Trail",
+    description="Retrieves the chronological administrative review audit history. Accessible by authorized student owner or same-college admin."
+)
+def get_application_review_history(
+    application_id: str,
+    current_payload: TokenPayload = Depends(get_current_token_payload),
+    db: Session = Depends(get_db)
+):
+    return AdminReviewService.get_review_history(
+        db=db,
+        app_id_str=application_id,
+        user_id_str=current_payload.sub,
+        role=current_payload.role,
+        user_college_id_str=str(current_payload.college_id) if current_payload.college_id else None
+    )
+
+
+@router.get(
     "/{application_id}/physical-verification",
     summary="Get Application Physical Verification Appointment",
     description="Retrieves the physical verification appointment for an application. Accessible by authorized student owner or same-college admin."

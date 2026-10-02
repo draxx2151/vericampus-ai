@@ -704,3 +704,100 @@ Stage 5 answers the operational question: *"Can the information extracted from t
 7. **Re-Verification Safe Merge**:
    - Application re-verification preserves existing Stage 5 metadata along with Stage 1-4 extractions, `review_history`, `correction_request`, and `risk_analysis`.
 
+### 9.2 Stage 6 — Evidence & Decision Support Engine
+
+#### Core Objective
+Stage 6 operates as an explainable, assistive decision-support engine. It does not replace the human administrator or independently approve/deny scholarship applications. Instead, it synthesizes raw verification outputs from Stages 1 through 5 and scheme eligibility rules into a structured, traceable evidence package that answers:
+1. What evidence supports the application?
+2. What evidence conflicts with the application?
+3. What evidence is unavailable?
+4. What checks were blocked by earlier stages?
+5. What warnings require human attention?
+6. Why is human review recommended?
+7. Which documents and checks contributed to the recommendation?
+
+#### Architectural Principles & Safeguards
+1. **Strictly Assistive Philosophy (No Autonomous Approval or Denial)**:
+   - Stage 6 never outputs an automated "approve" or "reject" verdict.
+   - It outputs one of 4 explainable administrative review states:
+     - `CLEAR_FOR_REVIEW`: All available checks and verified fields are consistent; ready for administrative sign-off.
+     - `HUMAN_REVIEW_REQUIRED`: One or more material discrepancies or conflicting checks require officer review.
+     - `INSUFFICIENT_EVIDENCE`: Required documents are missing or illegible, preventing evaluation.
+     - `PROCESSING_ERROR`: A technical error occurred, requiring administrative inspection.
+   - Final eligibility and scholarship decisions remain strictly with authorized university officers (Stage 7).
+2. **Zero Fraud Probability Scores**:
+   - No opaque percentages, fraud probabilities, or speculative fraud scores are generated.
+   - All findings are explainable, traceable, and grounded in documented criteria.
+3. **Non-Punitive Evidence Semantics**:
+   - `MATCH` -> Supporting evidence (`STRONG` or `MODERATE` strength).
+   - `MISMATCH` -> Conflicting evidence (`STRONG` or `MODERATE` strength, triggers `requires_human_review = True`).
+   - `NOT_AVAILABLE`, `BLOCKED`, `ERROR` -> Neutral evidence (`NONE` strength, `requires_human_review = False`). Unavailability of prototype external registries never counts against an applicant.
+4. **Overlapping Evidence Consolidation**:
+   - Deduplicates findings when both Stage 4 (cross-document consistency) and Stage 5 (authority record) report on the same discrepancy (e.g. date of birth).
+   - Merges source tags (`STAGE_4, STAGE_5`), retains the highest evidence strength (`STRONG`), and prevents artificial multiplication of conflict counts.
+5. **Strict PII Redaction & Storage Path Sanitization**:
+   - Automatic regex validators mask 12-digit Aadhaar identifiers, 10-character PAN cards, and server filesystem paths across all evidence item descriptions, observed values, and metadata.
+6. **Re-Verification Safe Merge**:
+   - Application re-verification preserves prior `evidence_summary` alongside Stages 1-5 metadata, `review_history`, `correction_request`, and `risk_analysis`.
+7. **Tenant-Isolated API Endpoint**:
+   - `GET /api/v1/applications/{application_id}/evidence` enforces student ownership and strict college tenant isolation boundaries (HTTP 403 on cross-college access).
+
+---
+
+### 9.3 Stage 7 — Human-in-the-Loop Final Review & Administrative Decision Engine
+
+#### Core Objective
+Stage 7 represents the authoritative final layer in the VeriCampus AI pipeline. It operationalizes the principle that AI models and automated systems provide evidence and decision-support, but never make administrative scholarship decisions. All final approvals, rejections, correction requests, and physical verification mandates are executed solely by authenticated, college-authorized administrative officers.
+
+```
+                      Stage 1-5 Pipeline Outputs
+                                  │
+                                  ▼
+                     Stage 6: Evidence Engine
+                    (Synthesizes Evidence Items)
+                                  │
+                                  ▼
+                   Stage 6 Review State & Evidence
+        [CLEAR_FOR_REVIEW | HUMAN_REVIEW_REQUIRED | INSUFFICIENT_EVIDENCE]
+                                  │
+                                  ▼
+               Stage 7: Administrative Review (HITL)
+                 (College-Authorized Human Reviewer)
+            ┌──────────────┬──────────────┬──────────────┐
+            ▼              ▼              ▼              ▼
+       [APPROVE]       [REJECT]      [REQUEST        [SCHEDULE
+                                    CORRECTION]      PHYSICAL]
+```
+
+#### Architectural Principles & Safeguards
+1. **Strictly Assistive Philosophy (Zero Autonomous Decisions)**:
+   - AI pipeline findings and Stage 6 evidence states (`CLEAR_FOR_REVIEW`, `HUMAN_REVIEW_REQUIRED`, etc.) are explicitly advisory.
+   - The system is architecturally incapable of executing an automated approval or rejection without an authorized human officer triggering the action.
+2. **Deterministic State Transition Matrix**:
+   - `admin_review_service.py` enforces a centralized, deterministic transition validator (`VALID_STATUS_TRANSITIONS`):
+     - `SUBMITTED` -> `NEEDS_REVIEW`, `UNDER_REVIEW`, `PHYSICAL_VERIFICATION_REQUIRED`, `REJECTED`
+     - `NEEDS_REVIEW` -> `UNDER_REVIEW`, `PHYSICAL_VERIFICATION_REQUIRED`, `VERIFIED`, `REJECTED`
+     - `UNDER_REVIEW` -> `NEEDS_REVIEW`, `PHYSICAL_VERIFICATION_REQUIRED`, `VERIFIED`, `REJECTED`
+     - `PHYSICAL_VERIFICATION_REQUIRED` -> `PHYSICAL_VERIFICATION_COMPLETED`, `REJECTED`
+     - `PHYSICAL_VERIFICATION_COMPLETED` -> `VERIFIED`, `REJECTED`, `NEEDS_REVIEW`
+     - `VERIFIED` -> Terminal state (locked)
+     - `REJECTED` -> Terminal state (locked)
+   - Illegal state jumps (such as approving or requesting corrections on an already `REJECTED` or `VERIFIED` application) raise HTTP 400 Bad Request.
+3. **Immutable Decision Evidence Snapshotting**:
+   - Every administrative action generates an immutable snapshot of Stage 6 evidence at that exact moment:
+     - `engine_version`, `overall_evidence_state`, `review_reasons`, `supporting_evidence_count`, `conflicting_evidence_count`, and `snapshot_timestamp`.
+   - Snapshots guarantee full accountability and auditability for university and state government oversight bodies.
+4. **Mandatory Administrative Justification**:
+   - Administrative rejections require a clear, non-empty reason (`min_length = 5`). Arbitrary or silent rejections are rejected with HTTP 400.
+5. **Append-Only Chronological Review History Audit Trail**:
+   - All review events (`REQUEST_CORRECTION`, `REQUIRE_PHYSICAL_VERIFICATION`, `COMPLETE_PHYSICAL_VERIFICATION`, `APPROVE`, `REJECT`, `OVERRIDE_AI_ADVICE`) are logged sequentially with `admin_id`, `admin_name`, `role`, `timestamp`, `previous_state`, `new_state`, `reason`, and `evidence_snapshot`.
+   - Re-running the AI verification pipeline strictly preserves all existing `review_history` entries, correction requests, and scheduled appointments.
+6. **Multi-College Tenant Isolation & PII Protection**:
+   - All administrative review endpoints (`approve`, `reject`, `request-correction`, `physical-verification`, `review-history`) strictly enforce tenant isolation boundaries. An admin from College A cannot inspect, modify, or approve applications belonging to College B (HTTP 403 Forbidden).
+   - Students can only view the review history of their own application.
+   - Internal filesystem storage paths and unredacted PII are strictly stripped from all review responses.
+7. **Dedicated Review History API**:
+   - `GET /api/v1/applications/{application_id}/review-history` exposes the append-only audit trail to authorized admins and applicant owners.
+
+
+

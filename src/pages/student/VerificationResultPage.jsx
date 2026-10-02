@@ -120,6 +120,7 @@ export default function VerificationResultPage() {
   const fieldExtraction = extractedData.field_extraction || null;
   const tamperConsistency = result?.tamper_consistency || extractedData.tamper_consistency || null;
   const authorityVerification = result?.authority_verification || extractedData.authority_verification || null;
+  const evidenceSummary = result?.evidence_summary || extractedData.evidence_summary || null;
   const fieldChecks = result?.field_checks || {};
   const crossDocMatches = result?.cross_document_matches || {};
   const issues = Array.isArray(result?.issues) ? result.issues : [];
@@ -233,6 +234,30 @@ export default function VerificationResultPage() {
                 <strong>Assistive AI Evaluation:</strong> This report represents automated OCR text extraction and rule-based consistency checks. It is designed to assist college verification officers and does not represent an automatic scholarship decision.
               </div>
             </div>
+
+            {/* Official College Administrative Decision Status */}
+            {myApplication.status === 'VERIFIED' ? (
+              <div className="p-4 bg-emerald-50 border-2 border-emerald-300 rounded-xl text-xs text-emerald-950 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="font-bold text-sm text-emerald-900">Application Approved by College Administration</h4>
+                  <p>Your scholarship application has been reviewed and officially approved by the authorized college verification officer.</p>
+                </div>
+              </div>
+            ) : myApplication.status === 'REJECTED' ? (
+              <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-xl text-xs text-rose-950 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="font-bold text-sm text-rose-900">Application Not Approved</h4>
+                  <p>Your scholarship application was not approved upon administrative review.</p>
+                  {result?.issues?.find(i => i.includes('rejection reason') || i.includes('rejected by administration')) && (
+                    <p className="mt-1 font-semibold text-rose-800">
+                      Administrative Reason: {result.issues.find(i => i.includes('rejection reason') || i.includes('rejected by administration')).split(': ').pop()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {/* Stage 1: Document Quality Gate Feedback */}
@@ -568,6 +593,80 @@ export default function VerificationResultPage() {
                   </p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Stage 6: Evidence & Decision Support Summary */}
+          {evidenceSummary && (
+            <div className={`rounded-2xl p-6 border-2 shadow-sm space-y-4 ${
+              evidenceSummary.overall_evidence_state === 'HUMAN_REVIEW_REQUIRED'
+                ? 'bg-amber-50/70 border-amber-300 text-amber-950'
+                : 'bg-white border-slate-200 text-slate-800'
+            }`}>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-teal">Stage 6: Decision Support</span>
+                  <h3 className="text-lg font-bold text-navy mt-0.5">Verification Evidence Summary</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Consolidated findings from all verification stages prepared for administrative committee review.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className={`text-xs font-extrabold px-3 py-1 rounded-full border ${
+                    evidenceSummary.overall_evidence_state === 'CLEAR_FOR_REVIEW'
+                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                      : evidenceSummary.overall_evidence_state === 'HUMAN_REVIEW_REQUIRED'
+                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                      : 'bg-slate-100 text-slate-700 border-slate-300'
+                  }`}>
+                    {evidenceSummary.overall_evidence_state === 'CLEAR_FOR_REVIEW'
+                      ? 'CLEAR FOR REVIEW'
+                      : evidenceSummary.overall_evidence_state === 'HUMAN_REVIEW_REQUIRED'
+                      ? 'OFFICER REVIEW NOTED'
+                      : evidenceSummary.overall_evidence_state?.replace(/_/g, ' ')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Explainable plain-language summary */}
+              {evidenceSummary.explanation && (
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 space-y-1">
+                  <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                    <Info className="w-4 h-4 text-teal" />
+                    <span>Evidence Summary:</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    {evidenceSummary.explanation}
+                  </p>
+                </div>
+              )}
+
+              {/* Supportive Findings Overview */}
+              <div className="grid sm:grid-cols-3 gap-3 text-center">
+                <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                  <span className="text-[10px] font-bold text-emerald-800 block uppercase">Supporting Findings</span>
+                  <span className="text-xl font-black text-emerald-700">
+                    {evidenceSummary.supporting_evidence?.length || (evidenceSummary.strong_support_count + evidenceSummary.moderate_support_count + evidenceSummary.weak_support_count) || 0}
+                  </span>
+                </div>
+                <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-100">
+                  <span className="text-[10px] font-bold text-amber-800 block uppercase">Review Advisories</span>
+                  <span className="text-xl font-black text-amber-700">
+                    {evidenceSummary.conflicting_evidence?.length || (evidenceSummary.strong_conflict_count + evidenceSummary.moderate_conflict_count + evidenceSummary.weak_conflict_count) || 0}
+                  </span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-600 block uppercase">General Warnings</span>
+                  <span className="text-xl font-black text-slate-700">
+                    {evidenceSummary.warnings?.length || 0}
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                <span>Verification assists the scholarship committee; all decisions are taken by university authorities.</span>
+                <span className="font-semibold text-teal">VeriCampus AI</span>
+              </div>
             </div>
           )}
 
